@@ -1,5 +1,6 @@
 package com.roadwatch.admin.dao;
 
+import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.*;
 import com.google.firebase.cloud.FirestoreClient;
 import com.roadwatch.admin.model.PotholeReport;
@@ -8,32 +9,36 @@ import org.springframework.stereotype.Repository;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 
+import static com.google.firebase.cloud.FirestoreClient.getFirestore;
 
 @Repository
 public class ReportDAO {
 
     private Firestore getDb() {
-        return FirestoreClient.getFirestore();
+        return getFirestore();
     }
 
+    // Récupérer tous les signalements
     public List<PotholeReport> getAllReports() throws ExecutionException, InterruptedException {
         return queryToList(
-            getDb().collection("reports")
-                   .orderBy("timestamp", Query.Direction.DESCENDING)
-                   .get().get()
+                getDb().collection("reports")
+                        .orderBy("timestamp", Query.Direction.DESCENDING)
+                        .get().get()
         );
     }
 
+    // Récupérer les signalements par statut
     public List<PotholeReport> getReportsByStatus(String status)
             throws ExecutionException, InterruptedException {
         return queryToList(
-            getDb().collection("reports")
-                   .whereEqualTo("status", status)
-                   .orderBy("timestamp", Query.Direction.DESCENDING)
-                   .get().get()
+                getDb().collection("reports")
+                        .whereEqualTo("status", status)
+                        .orderBy("timestamp", Query.Direction.DESCENDING)
+                        .get().get()
         );
     }
 
+    // Récupérer les signalements avec filtres
     public List<PotholeReport> getReportsFiltered(String status, Long from, Long to)
             throws ExecutionException, InterruptedException {
 
@@ -42,7 +47,7 @@ public class ReportDAO {
 
         if (status != null && !status.isEmpty() && !status.equals("all")) {
             query = col.whereEqualTo("status", status)
-                       .orderBy("timestamp", Query.Direction.DESCENDING);
+                    .orderBy("timestamp", Query.Direction.DESCENDING);
         }
         if (from != null) query = query.whereGreaterThanOrEqualTo("timestamp", from);
         if (to   != null) query = query.whereLessThanOrEqualTo("timestamp", to);
@@ -50,14 +55,24 @@ public class ReportDAO {
         return queryToList(query.get().get());
     }
 
+    // Mettre à jour le statut d'un signalement
     public void updateStatus(String reportId, String newStatus)
             throws ExecutionException, InterruptedException {
         getDb().collection("reports")
-               .document(reportId)
-               .update("status", newStatus)
-               .get();
+                .document(reportId)
+                .update("status", newStatus)
+                .get();
     }
 
+    // Supprimer un signalement
+    public void deleteReport(String reportId) throws ExecutionException, InterruptedException {
+        getDb().collection("reports")
+                .document(reportId)
+                .delete()
+                .get();
+    }
+
+    // Statistiques : signalements par mois
     public Map<String, Integer> getReportsByMonth() throws ExecutionException, InterruptedException {
         List<PotholeReport> all = getAllReports();
         Map<String, Integer> byMonth = new LinkedHashMap<>();
@@ -67,19 +82,20 @@ public class ReportDAO {
             cal.setTime(new Date());
             cal.add(Calendar.MONTH, -i);
             String key = String.format("%02d/%d",
-                cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR));
+                    cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR));
             byMonth.put(key, 0);
         }
 
         for (PotholeReport r : all) {
             cal.setTimeInMillis(r.getTimestamp());
             String key = String.format("%02d/%d",
-                cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR));
+                    cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR));
             byMonth.merge(key, 1, Integer::sum);
         }
         return byMonth;
     }
 
+    // Statistiques : comptage par statut
     public Map<String, Long> countByStatus() throws ExecutionException, InterruptedException {
         List<PotholeReport> all = getAllReports();
         Map<String, Long> counts = new HashMap<>();
@@ -90,6 +106,7 @@ public class ReportDAO {
         return counts;
     }
 
+    // Temps moyen de réparation
     public double getAvgRepairTimeDays() throws ExecutionException, InterruptedException {
         List<PotholeReport> fixed = getReportsByStatus("fixed");
         if (fixed.isEmpty()) return 0;
@@ -98,6 +115,57 @@ public class ReportDAO {
         double avgMs = (double) totalMs / fixed.size();
         return Math.round(avgMs / (1000.0 * 60 * 60 * 24) * 10.0) / 10.0;
     }
+
+    // ========== MÉTHODES POUR LES UTILISATEURS (CORRIGÉES) ==========
+
+    // Compter les signalements par utilisateur (userId = uid du Firebase Auth)
+    public int getReportsCountByUserId(String userId) throws ExecutionException, InterruptedException {
+        ApiFuture<QuerySnapshot> future = getFirestore()
+                .collection("reports")
+                .whereEqualTo("userId", userId)
+                .get();
+        return future.get().size();
+    }
+
+    // Récupérer les signalements par utilisateur
+    public List<PotholeReport> getReportsByUserId(String userId) throws ExecutionException, InterruptedException {
+        ApiFuture<QuerySnapshot> future = getFirestore()
+                .collection("reports")
+                .whereEqualTo("userId", userId)
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .get();
+
+        List<PotholeReport> reports = new ArrayList<>();
+        for (QueryDocumentSnapshot doc : future.get().getDocuments()) {
+            PotholeReport report = doc.toObject(PotholeReport.class);
+            if (report != null) {
+                report.setId(doc.getId());
+                reports.add(report);
+            }
+        }
+        return reports;
+    }
+
+    // Récupérer les signalements par email utilisateur (si userId n'est pas stocké)
+    public List<PotholeReport> getReportsByUserEmail(String email) throws ExecutionException, InterruptedException {
+        ApiFuture<QuerySnapshot> future = getFirestore()
+                .collection("reports")
+                .whereEqualTo("userEmail", email)
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .get();
+
+        List<PotholeReport> reports = new ArrayList<>();
+        for (QueryDocumentSnapshot doc : future.get().getDocuments()) {
+            PotholeReport report = doc.toObject(PotholeReport.class);
+            if (report != null) {
+                report.setId(doc.getId());
+                reports.add(report);
+            }
+        }
+        return reports;
+    }
+
+    // ========== MÉTHODE UTILITAIRE ==========
 
     private List<PotholeReport> queryToList(QuerySnapshot snapshot) {
         List<PotholeReport> list = new ArrayList<>();
@@ -109,5 +177,25 @@ public class ReportDAO {
             }
         }
         return list;
+    }
+
+    // Sauvegarder un nouveau signalement
+    public String saveReport(PotholeReport report) throws ExecutionException, InterruptedException {
+        DocumentReference docRef = getDb().collection("reports").document();
+        report.setId(docRef.getId());
+        docRef.set(report).get();
+        return docRef.getId();
+    }
+
+    // Récupérer un signalement par ID
+    public PotholeReport getReportById(String id) throws ExecutionException, InterruptedException {
+        DocumentReference docRef = getDb().collection("reports").document(id);
+        DocumentSnapshot doc = docRef.get().get();
+        if (doc.exists()) {
+            PotholeReport report = doc.toObject(PotholeReport.class);
+            report.setId(doc.getId());
+            return report;
+        }
+        return null;
     }
 }

@@ -10,11 +10,13 @@ import com.itextpdf.text.BaseColor;
 import com.itextpdf.text.pdf.PdfPTable;
 import com.itextpdf.text.pdf.PdfPCell;
 import com.itextpdf.text.pdf.PdfWriter;
+import com.roadwatch.admin.dao.HistoryDAO;
 import com.roadwatch.admin.dao.ReportDAO;
+import com.roadwatch.admin.model.HistoryEntry;
 import com.roadwatch.admin.model.PotholeReport;
 import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -29,26 +31,41 @@ public class ReportController {
 
     private final ReportDAO reportDAO;
 
-    // Spring Boot injecte automatiquement le DAO (injection de dépendances)
+    @Autowired
+    private NotificationController notificationController;
+
+    @Autowired
+    private HistoryDAO historyDAO;
+
     public ReportController(ReportDAO reportDAO) {
         this.reportDAO = reportDAO;
     }
 
-    // ─── Dashboard : stats générales ──────────────────────────────────────────
-    // Ancien : DashboardServlet.doGet() → met des attributs dans req → dashboard.jsp
-    // Nouveau : retourne du JSON → React affiche les chiffres
     @GetMapping("/dashboard")
     public ResponseEntity<Map<String, Object>> getDashboard() {
         try {
             Map<String, Long> counts = reportDAO.countByStatus();
             double avgRepair = reportDAO.getAvgRepairTimeDays();
 
+            List<PotholeReport> allReports = reportDAO.getAllReports();
+            List<Map<String, Object>> recentReports = new ArrayList<>();
+            for (int i = 0; i < Math.min(5, allReports.size()); i++) {
+                PotholeReport r = allReports.get(i);
+                Map<String, Object> recent = new HashMap<>();
+                recent.put("id", r.getId());
+                recent.put("address", r.getAddress());
+                recent.put("timestamp", r.getTimestamp());
+                recent.put("status", r.getStatus());
+                recentReports.add(recent);
+            }
+
             Map<String, Object> response = new HashMap<>();
-            response.put("total",     counts.get("total"));
-            response.put("pending",   counts.get("pending"));
+            response.put("total", counts.get("total"));
+            response.put("pending", counts.get("pending"));
             response.put("confirmed", counts.get("confirmed"));
-            response.put("fixed",     counts.get("fixed"));
+            response.put("fixed", counts.get("fixed"));
             response.put("avgRepair", avgRepair);
+            response.put("recentReports", recentReports);
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
@@ -56,25 +73,19 @@ public class ReportController {
         }
     }
 
-    // ─── Stats pour graphiques ────────────────────────────────────────────────
-    // Ancien : StatsServlet.doGet() → Gson → JSON
-    // Nouveau : Spring Boot sérialise automatiquement en JSON (plus de Gson manuel)
     @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> getStats() {
         try {
             Map<String, Object> stats = new HashMap<>();
-            stats.put("byMonth",      reportDAO.getReportsByMonth());
-            stats.put("byStatus",     reportDAO.countByStatus());
-            stats.put("avgRepairDays",reportDAO.getAvgRepairTimeDays());
+            stats.put("byMonth", reportDAO.getReportsByMonth());
+            stats.put("byStatus", reportDAO.countByStatus());
+            stats.put("avgRepairDays", reportDAO.getAvgRepairTimeDays());
             return ResponseEntity.ok(stats);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
         }
     }
 
-    // ─── Liste des signalements (avec filtres) ────────────────────────────────
-    // Ancien : ReportsServlet + MapServlet (deux servlets différents pour la même donnée !)
-    // Nouveau : un seul endpoint avec paramètres optionnels
     @GetMapping("/reports")
     public ResponseEntity<List<PotholeReport>> getReports(
             @RequestParam(required = false) String status,
@@ -88,9 +99,16 @@ public class ReportController {
         }
     }
 
-    // ─── Mise à jour du statut ────────────────────────────────────────────────
-    // Ancien : UpdateStatusServlet.doPost() avec req.getParameter()
-    // Nouveau : @PathVariable pour l'ID dans l'URL, @RequestBody pour le JSON
+    @GetMapping("/reports/{id}/history")
+    public ResponseEntity<?> getReportHistory(@PathVariable String id) {
+        try {
+            List<HistoryEntry> history = historyDAO.getHistoryByReportId(id);
+            return ResponseEntity.ok(history);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @PostMapping("/reports/{id}/status")
     public ResponseEntity<Map<String, Object>> updateStatus(
             @PathVariable String id,
@@ -102,7 +120,27 @@ public class ReportController {
                 return ResponseEntity.badRequest().build();
             }
 
+            PotholeReport report = reportDAO.getReportById(id);
+            String oldStatus = report.getStatus();
+
             reportDAO.updateStatus(id, newStatus);
+
+            HistoryEntry history = new HistoryEntry(
+                    id,
+                    "STATUS_CHANGE",
+                    oldStatus,
+                    newStatus,
+                    "admin@roadwatch.com"
+            );
+            historyDAO.addHistoryEntry(history);
+
+            if ("fixed".equals(newStatus)) {
+                notificationController.sendNotification(
+                        "Signalement résolu",
+                        "Un nid-de-poule a été marqué comme réparé",
+                        "success"
+                );
+            }
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
@@ -114,8 +152,46 @@ public class ReportController {
         }
     }
 
-    // ─── Export Excel ─────────────────────────────────────────────────────────
-    // Logique identique à l'ancien ExportServlet.exportExcel()
+    @PostMapping("/reports")
+    public ResponseEntity<Map<String, Object>> createReport(@RequestBody PotholeReport report) {
+        try {
+            String id = reportDAO.saveReport(report);
+            report.setId(id);
+
+            String address = report.getAddress() != null ? report.getAddress() : "emplacement inconnu";
+            notificationController.sendNotification(
+                    "Nouveau signalement",
+                    "Nid-de-poule signalé à " + address,
+                    "info"
+            );
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("id", id);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/reports/{id}")
+    public ResponseEntity<?> deleteReport(@PathVariable String id) {
+        try {
+            List<PotholeReport> all = reportDAO.getAllReports();
+            boolean exists = all.stream().anyMatch(r -> r.getId().equals(id));
+
+            if (!exists) {
+                return ResponseEntity.status(404).body(Map.of("error", "Signalement non trouvé"));
+            }
+
+            reportDAO.deleteReport(id);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Signalement supprimé"));
+
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @GetMapping("/export")
     public void export(
             @RequestParam(defaultValue = "excel") String format,
@@ -136,8 +212,7 @@ public class ReportController {
         }
     }
 
-    private void exportExcel(HttpServletResponse resp, List<PotholeReport> reports)
-            throws IOException {
+    private void exportExcel(HttpServletResponse resp, List<PotholeReport> reports) throws IOException {
         resp.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         resp.setHeader("Content-Disposition", "attachment; filename=signalements.xlsx");
 
@@ -151,7 +226,7 @@ public class ReportController {
             headerStyle.setFont(font);
 
             String[] cols = {"ID", "Email", "Adresse", "Latitude", "Longitude",
-                             "Statut", "IA Détecté", "Confiance IA", "Date"};
+                    "Statut", "IA Détecté", "Confiance IA", "Date"};
             for (int i = 0; i < cols.length; i++) {
                 Cell cell = header.createCell(i);
                 cell.setCellValue(cols[i]);
@@ -163,8 +238,8 @@ public class ReportController {
             for (PotholeReport r : reports) {
                 Row row = sheet.createRow(rowNum++);
                 row.createCell(0).setCellValue(r.getId());
-                row.createCell(1).setCellValue(r.getUserEmail());
-                row.createCell(2).setCellValue(r.getAddress());
+                row.createCell(1).setCellValue(r.getUserEmail() != null ? r.getUserEmail() : "");
+                row.createCell(2).setCellValue(r.getAddress() != null ? r.getAddress() : "");
                 row.createCell(3).setCellValue(r.getLatitude());
                 row.createCell(4).setCellValue(r.getLongitude());
                 row.createCell(5).setCellValue(r.getStatusLabel());
@@ -177,8 +252,7 @@ public class ReportController {
         }
     }
 
-    private void exportPDF(HttpServletResponse resp, List<PotholeReport> reports)
-            throws IOException, DocumentException {
+    private void exportPDF(HttpServletResponse resp, List<PotholeReport> reports) throws IOException, DocumentException {
         resp.setContentType("application/pdf");
         resp.setHeader("Content-Disposition", "attachment; filename=signalements.pdf");
 
@@ -186,8 +260,7 @@ public class ReportController {
         PdfWriter.getInstance(doc, resp.getOutputStream());
         doc.open();
 
-        com.itextpdf.text.Font titleFont = FontFactory.getFont(
-            FontFactory.HELVETICA_BOLD, 16, BaseColor.DARK_GRAY);
+        com.itextpdf.text.Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16, BaseColor.DARK_GRAY);
         doc.add(new Paragraph("Rapport des signalements — RoadWatch", titleFont));
         doc.add(new Paragraph(" "));
 
@@ -195,8 +268,7 @@ public class ReportController {
         table.setWidthPercentage(100);
         table.setWidths(new float[]{3, 5, 8, 3, 3, 3, 4});
 
-        com.itextpdf.text.Font hFont = FontFactory.getFont(
-            FontFactory.HELVETICA_BOLD, 9, BaseColor.WHITE);
+        com.itextpdf.text.Font hFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, BaseColor.WHITE);
         BaseColor headerBg = new BaseColor(25, 118, 210);
 
         for (String h : new String[]{"ID", "Email", "Adresse", "Statut", "IA", "Confiance", "Date"}) {
@@ -208,9 +280,10 @@ public class ReportController {
 
         com.itextpdf.text.Font rowFont = FontFactory.getFont(FontFactory.HELVETICA, 8);
         for (PotholeReport r : reports) {
-            table.addCell(new PdfPCell(new Phrase(r.getId().substring(0, 8) + "...", rowFont)));
-            table.addCell(new PdfPCell(new Phrase(r.getUserEmail(), rowFont)));
-            table.addCell(new PdfPCell(new Phrase(r.getAddress(), rowFont)));
+            String idShort = r.getId().length() > 8 ? r.getId().substring(0, 8) + "..." : r.getId();
+            table.addCell(new PdfPCell(new Phrase(idShort, rowFont)));
+            table.addCell(new PdfPCell(new Phrase(r.getUserEmail() != null ? r.getUserEmail() : "-", rowFont)));
+            table.addCell(new PdfPCell(new Phrase(r.getAddress() != null ? r.getAddress() : "-", rowFont)));
             table.addCell(new PdfPCell(new Phrase(r.getStatusLabel(), rowFont)));
             table.addCell(new PdfPCell(new Phrase(r.isAiDetected() ? "✓" : "✗", rowFont)));
             table.addCell(new PdfPCell(new Phrase(r.getAiConfidencePercent() + "%", rowFont)));

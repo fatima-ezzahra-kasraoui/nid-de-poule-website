@@ -4,12 +4,28 @@ import MarkerClusterGroup from "react-leaflet-cluster";
 import L from "leaflet";
 import { fetchReports, updateStatus } from "../services/api";
 
+const Icons = {
+  Map: () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polygon points="1,6 1,22 8,18 16,22 23,18 23,2 16,6 8,2 1,6"/>
+      <line x1="8" y1="2" x2="8" y2="18"/>
+      <line x1="16" y1="6" x2="16" y2="22"/>
+    </svg>
+  ),
+  ArrowRight: () => (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <line x1="5" y1="12" x2="19" y2="12"/>
+      <polyline points="12,5 19,12 12,19"/>
+    </svg>
+  ),
+};
+
 function createIcon(status) {
-  const colors = { pending: "#FF9800", confirmed: "#2196F3", fixed: "#4CAF50" };
+  const colors = { pending: "#f39c12", confirmed: "#3498db", fixed: "#27ae60" };
   const color = colors[status] || "#888";
   return L.divIcon({
     className: "",
-    html: `<div style="width:28px;height:28px;border-radius:50% 50% 50% 0;background:${color};transform:rotate(-45deg);border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);"></div>`,
+    html: `<div style="width:28px;height:28px;border-radius:50% 50% 50% 0;background:${color};transform:rotate(-45deg);border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.2);"></div>`,
     iconSize: [28, 28],
     iconAnchor: [14, 28],
     popupAnchor: [0, -32],
@@ -42,11 +58,11 @@ function ResetView({ reports, triggerReset }) {
   return null;
 }
 
-const STATUS_LABELS = { pending: "⏳ En attente", confirmed: "🔵 Confirmé", fixed: "✅ Réparé" };
+const STATUS_LABELS = { pending: "En attente", confirmed: "Confirmé", fixed: "Réparé" };
 
 export default function MapPage() {
-  const [reports, setReports]     = useState([]);
-  const [error, setError]         = useState(null);
+  const [reports, setReports] = useState([]);
+  const [error, setError] = useState(null);
   const [resetView, setResetView] = useState(false);
 
   useEffect(() => {
@@ -66,47 +82,69 @@ export default function MapPage() {
     }
   }
 
-  if (error) return <p className="error">❌ {error}</p>;
+  if (error) return <p style={{ color: "var(--danger)", padding: 20 }}>{error}</p>;
 
   return (
-    <div>
-      <h2>🗺️ Carte des signalements</h2>
+    <div className="fade-in">
 
-      <div style={{display:"flex", gap:12, marginBottom:16, flexWrap:"wrap", alignItems:"center"}}>
-        <span className="badge badge-pending">🟡 En attente</span>
-        <span className="badge badge-confirmed">🔵 Confirmé</span>
-        <span className="badge badge-fixed">🟢 Réparé</span>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--dark)", marginBottom: 4 }}>Carte des signalements</h1>
+          <p style={{ fontSize: 11, color: "var(--gray)" }}>{reports.length} signalement(s) localisé(s)</p>
+        </div>
         <button
           onClick={() => setResetView(v => !v)}
           style={{
-            marginLeft: "auto",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
             padding: "6px 14px",
-            borderRadius: 8,
-            border: "1px solid #ccc",
+            borderRadius: 6,
+            border: "1px solid var(--border)",
             cursor: "pointer",
-            background: "#f5f5f5",
-            fontSize: 13,
+            background: "white",
+            fontSize: 12,
+            color: "var(--gray)"
           }}
         >
-          🔍 Vue globale
+          <Icons.Map /> Vue globale <Icons.ArrowRight />
         </button>
       </div>
 
-      <div className="card" style={{padding:0, overflow:"hidden"}}>
+      {/* Légende */}
+      <div className="card" style={{ marginBottom: 16, padding: "10px 16px" }}>
+        <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 12, height: 12, borderRadius: "50% 50% 50% 0", background: "#f39c12", transform: "rotate(-45deg)" }} />
+            <span style={{ fontSize: 11, color: "var(--gray)" }}>En attente</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 12, height: 12, borderRadius: "50% 50% 50% 0", background: "#3498db", transform: "rotate(-45deg)" }} />
+            <span style={{ fontSize: 11, color: "var(--gray)" }}>Confirmé</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 12, height: 12, borderRadius: "50% 50% 50% 0", background: "#27ae60", transform: "rotate(-45deg)" }} />
+            <span style={{ fontSize: 11, color: "var(--gray)" }}>Réparé</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Carte */}
+      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <MapContainer
           center={[35.7595, -5.8340]}
           zoom={13}
-          style={{height:600, width:"100%"}}
+          style={{ height: 550, width: "100%" }}
         >
           <TileLayer
-            attribution="© OpenStreetMap contributors"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
           <FitBounds reports={reports} />
           <ResetView reports={reports} triggerReset={resetView} />
 
-          {/* ✅ MarkerClusterGroup remplace les Markers directs */}
           <MarkerClusterGroup chunkedLoading>
             {reports
               .filter(r => r.latitude && r.longitude)
@@ -117,34 +155,60 @@ export default function MapPage() {
                   icon={createIcon(r.status)}
                 >
                   <Popup maxWidth={280}>
-                    <div style={{minWidth:220, fontFamily:"Segoe UI,sans-serif"}}>
+                    <div style={{ minWidth: 200, fontFamily: "'Inter', sans-serif" }}>
                       {r.photoUrl && (
                         <img
                           src={r.photoUrl}
-                          alt="photo"
-                          style={{width:"100%", height:140, objectFit:"cover", borderRadius:8, marginBottom:10}}
+                          alt="photo du signalement"
+                          style={{
+                            width: "100%",
+                            height: 120,
+                            objectFit: "cover",
+                            borderRadius: 8,
+                            marginBottom: 12
+                          }}
                           onError={e => e.target.style.display = "none"}
                         />
                       )}
-                      <div style={{fontWeight:"bold", marginBottom:4}}>
-                        📍 {r.address || "Adresse inconnue"}
+                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>
+                        {r.address || "Adresse non renseignée"}
                       </div>
-                      <div style={{color:"#666", fontSize:12, marginBottom:8}}>
-                        👤 {r.userEmail || "Anonyme"}<br/>
-                        📅 {r.timestamp ? new Date(r.timestamp).toLocaleDateString("fr-FR") : ""}
+                      <div style={{ color: "#666", fontSize: 11, marginBottom: 8 }}>
+                        {r.userEmail || "Utilisateur anonyme"}<br />
+                        {r.timestamp ? new Date(r.timestamp).toLocaleDateString("fr-FR") : "Date inconnue"}
                       </div>
-                      <div style={{marginBottom:8}}>
-                        Statut : <strong>{STATUS_LABELS[r.status] || r.status}</strong>
+                      <div style={{ marginBottom: 10, fontSize: 12 }}>
+                        Statut : <strong style={{ color: r.status === "pending" ? "#f39c12" : r.status === "confirmed" ? "#3498db" : "#27ae60" }}>
+                          {STATUS_LABELS[r.status] || r.status}
+                        </strong>
                       </div>
                       {r.aiDetected && (
-                        <div style={{color:"green", fontSize:12, marginBottom:8}}>
-                          🤖 IA détecté ({Math.round(r.aiConfidence * 100)}%)
+                        <div style={{ color: "#27ae60", fontSize: 11, marginBottom: 10 }}>
+                          Détection IA : {Math.round(r.aiConfidence * 100)}% de confiance
                         </div>
                       )}
-                      <div style={{display:"flex", gap:4, flexWrap:"wrap"}}>
-                        <button className="btn-warning" onClick={() => handleUpdateStatus(r.id, "pending")}>En attente</button>
-                        <button className="btn-info"    onClick={() => handleUpdateStatus(r.id, "confirmed")}>Confirmer</button>
-                        <button className="btn-success" onClick={() => handleUpdateStatus(r.id, "fixed")}>Réparé ✅</button>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                        <button
+                          className="btn-warning"
+                          onClick={() => handleUpdateStatus(r.id, "pending")}
+                          style={{ fontSize: 11, padding: "4px 10px" }}
+                        >
+                          En attente
+                        </button>
+                        <button
+                          className="btn-info"
+                          onClick={() => handleUpdateStatus(r.id, "confirmed")}
+                          style={{ fontSize: 11, padding: "4px 10px", background: "#3498db" }}
+                        >
+                          Confirmer
+                        </button>
+                        <button
+                          className="btn-success"
+                          onClick={() => handleUpdateStatus(r.id, "fixed")}
+                          style={{ fontSize: 11, padding: "4px 10px", background: "#27ae60" }}
+                        >
+                          Réparé
+                        </button>
                       </div>
                     </div>
                   </Popup>
