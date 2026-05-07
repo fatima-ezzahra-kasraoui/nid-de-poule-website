@@ -203,4 +203,18 @@ public class ReportDAO {
         }
         return null;
     }
+
+    // Mettre à jour un signalement complet
+    public void updateReport(PotholeReport report) throws ExecutionException, InterruptedException {
+        getDb().collection("reports")
+                .document(report.getId())
+                .set(report)
+                .get();
+    }
+    public List<String> getLikedByRaw(String reportId) throws ExecutionException, InterruptedException {
+        DocumentSnapshot doc = getDb().collection("reports").document(reportId).get().get();
+        if (!doc.exists()) return new ArrayList<>();
+        List<String> likedBy = (List<String>) doc.get("likedBy");
+        return likedBy != null ? likedBy : new ArrayList<>();
+    }
 }

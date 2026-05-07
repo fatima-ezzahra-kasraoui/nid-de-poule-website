@@ -1,5 +1,7 @@
 package com.roadwatch.admin.controller;
 
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.UserRecord;
 import com.itextpdf.text.Document;
 import com.itextpdf.text.DocumentException;
 import com.itextpdf.text.FontFactory;
@@ -10,6 +12,7 @@ import com.itextpdf.text.BaseColor;
 import com.itextpdf.text.pdf.PdfPTable;
 import com.itextpdf.text.pdf.PdfPCell;
 import com.itextpdf.text.pdf.PdfWriter;
+import com.roadwatch.admin.dao.CommentDAO;
 import com.roadwatch.admin.dao.HistoryDAO;
 import com.roadwatch.admin.dao.ReportDAO;
 import com.roadwatch.admin.model.HistoryEntry;
@@ -19,6 +22,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.roadwatch.admin.model.Comment;
 
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -36,6 +40,8 @@ public class ReportController {
 
     @Autowired
     private HistoryDAO historyDAO;
+    @Autowired
+    private CommentDAO commentDAO;
 
     public ReportController(ReportDAO reportDAO) {
         this.reportDAO = reportDAO;
@@ -93,6 +99,13 @@ public class ReportController {
             @RequestParam(required = false) Long dateTo) {
         try {
             List<PotholeReport> reports = reportDAO.getReportsFiltered(status, dateFrom, dateTo);
+
+            // Ajouter le nombre de commentaires pour chaque signalement
+            for (PotholeReport report : reports) {
+                int commentCount = commentDAO.getCommentsCount(report.getId());
+                report.setCommentCount(commentCount);
+            }
+
             return ResponseEntity.ok(reports);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
@@ -104,6 +117,22 @@ public class ReportController {
         try {
             List<HistoryEntry> history = historyDAO.getHistoryByReportId(id);
             return ResponseEntity.ok(history);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // Ajoute un endpoint pour récupérer un signalement avec son commentCount
+    @GetMapping("/reports/{id}")
+    public ResponseEntity<?> getReportById(@PathVariable String id) {
+        try {
+            PotholeReport report = reportDAO.getReportById(id);
+            if (report == null) {
+                return ResponseEntity.status(404).body(Map.of("error", "Signalement non trouvé"));
+            }
+            int commentCount = commentDAO.getCommentsCount(id);
+            report.setCommentCount(commentCount);
+            return ResponseEntity.ok(report);
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
         }
@@ -299,4 +328,101 @@ public class ReportController {
         doc.add(table);
         doc.close();
     }
+    // Récupérer les commentaires d'un signalement (avec pagination)
+    @GetMapping("/reports/{id}/comments")
+    public ResponseEntity<?> getComments(
+            @PathVariable String id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int limit) {
+        try {
+            int offset = page * limit;
+            List<com.roadwatch.admin.model.Comment> comments = commentDAO.getCommentsByReportId(id, limit, offset);
+            int total = commentDAO.getCommentsCount(id);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("comments", comments);
+            response.put("total", total);
+            response.put("page", page);
+            response.put("limit", limit);
+            response.put("totalPages", (int) Math.ceil((double) total / limit));
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // Supprimer un commentaire
+    @DeleteMapping("/reports/{reportId}/comments/{commentId}")
+    public ResponseEntity<?> deleteComment(@PathVariable String reportId, @PathVariable String commentId) {
+        try {
+            commentDAO.deleteComment(reportId, commentId);
+            return ResponseEntity.ok(Map.of("success", true));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/reports/{id}/likes")
+    public ResponseEntity<?> getLikes(@PathVariable String id) {
+        try {
+            List<String> likedBy = reportDAO.getLikedByRaw(id);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("likeCount", likedBy.size());
+            response.put("likedBy", likedBy);
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/reports/{id}/likes/paginated")
+    public ResponseEntity<?> getLikesPaginated(
+            @PathVariable String id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int limit) {
+        try {
+            List<String> allUserIds = reportDAO.getLikedByRaw(id);
+
+            System.out.println("👉 likedBy size: " + allUserIds.size());
+            System.out.println("👉 likedBy: " + allUserIds);
+
+            int total = allUserIds.size();
+            int start = page * limit;
+            int end = Math.min(start + limit, total);
+            List<String> paginated = start < total ? allUserIds.subList(start, end) : new ArrayList<>();
+
+            List<Map<String, Object>> likesWithInfo = new ArrayList<>();
+            for (String userId : paginated) {
+                Map<String, Object> likeInfo = new HashMap<>();
+                likeInfo.put("userId", userId);
+                try {
+                    UserRecord userRecord = FirebaseAuth.getInstance().getUser(userId);
+                    likeInfo.put("userEmail", userRecord.getEmail() != null ? userRecord.getEmail() : "—");
+                    likeInfo.put("displayName", userRecord.getDisplayName() != null ? userRecord.getDisplayName() : "");
+                } catch (Exception e) {
+                    likeInfo.put("userEmail", "Inconnu");
+                    likeInfo.put("displayName", "");
+                }
+                likesWithInfo.add(likeInfo);
+            }
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("likes", likesWithInfo);
+            response.put("total", total);
+            response.put("page", page);
+            response.put("limit", limit);
+            response.put("totalPages", (int) Math.ceil((double) total / limit));
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+
+
 }

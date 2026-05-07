@@ -7,9 +7,12 @@ import Reports from "./pages/Reports";
 import Stats from "./pages/Stats";
 import Login from "./pages/Login";
 import Users from "./pages/Users";
+import Comments from "./pages/Comments";
+import Likes from "./pages/Likes";
 import { isAuthenticated, getUser, logout } from "./services/auth";
 import "leaflet/dist/leaflet.css";
 import "./styles/theme.css";
+
 
 const NavIcons = {
   Dashboard: () => (
@@ -98,7 +101,9 @@ function AuthenticatedApp({ onLogout }) {
           <Route path="/reports" element={<Reports />} />
           <Route path="/stats" element={<Stats />} />
           <Route path="/users" element={<Users />} />
+          <Route path="/comments/:reportId" element={<Comments />} />
           <Route path="*" element={<Navigate to="/" />} />
+          <Route path="/likes/:reportId" element={<Likes />} />
         </Routes>
       </main>
     </div>

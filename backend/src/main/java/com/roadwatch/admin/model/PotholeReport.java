@@ -2,7 +2,7 @@ package com.roadwatch.admin.model;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
-
+import java.util.List;
 
 public class PotholeReport {
 
@@ -18,6 +18,8 @@ public class PotholeReport {
     private float aiConfidence;
     private long timestamp;
     private String description;
+    private List<String> likedBy;      // ← AJOUTE CETTE LIGNE
+    private int commentCount;
 
     public PotholeReport() {}
 
@@ -39,7 +41,18 @@ public class PotholeReport {
         return (int)(aiConfidence * 100);
     }
 
-    // Getters & Setters
+    public int getLikeCount() {
+        return likedBy != null ? likedBy.size() : 0;
+    }
+
+    public int getCommentCount() { return commentCount; }
+    public void setCommentCount(int commentCount) { this.commentCount = commentCount; }
+
+    // Getters & Setters pour likedBy
+    public List<String> getLikedBy() { return likedBy; }
+    public void setLikedBy(List<String> likedBy) { this.likedBy = likedBy; }
+
+    // Getters & Setters existants
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
     public String getUserId() { return userId; }

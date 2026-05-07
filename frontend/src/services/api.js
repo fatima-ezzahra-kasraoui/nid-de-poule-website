@@ -159,3 +159,36 @@ export async function getReportHistory(id) {
   }
   return res.json();
 }
+// GET /api/reports/{id}/comments?page=0&limit=20
+export async function getComments(reportId, page = 0, limit = 20) {
+  const res = await fetchWithAuth(`/reports/${reportId}/comments?page=${page}&limit=${limit}`);
+  if (!res.ok) throw new Error("Erreur chargement commentaires");
+  return res.json();
+}
+
+// DELETE /api/reports/{reportId}/comments/{commentId}
+export async function deleteComment(reportId, commentId) {
+  const res = await fetchWithAuth(`/reports/${reportId}/comments/${commentId}`, {
+    method: "DELETE",
+  });
+  return res.json();
+}
+
+// GET /api/reports/{id}/likes
+export async function getLikes(reportId) {
+  const res = await fetchWithAuth(`/reports/${reportId}/likes`);
+  return res.json();
+}
+// GET /api/reports/{id}/likes/paginated
+export async function getLikesPaginated(reportId, page = 0, limit = 20) {
+  const res = await fetchWithAuth(`/reports/${reportId}/likes/paginated?page=${page}&limit=${limit}`);
+  if (!res.ok) throw new Error("Erreur chargement likes");
+  return res.json();
+}
+
+// GET /api/reports/{id}
+export async function getReportById(id) {
+  const res = await fetchWithAuth(`/reports/${id}`);
+  if (!res.ok) throw new Error("Erreur chargement signalement");
+  return res.json();
+}

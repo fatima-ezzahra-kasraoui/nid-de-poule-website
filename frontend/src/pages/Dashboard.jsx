@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { fetchDashboard, fetchReports } from "../services/api";
+import { fetchDashboard, fetchReports, getLikes } from "../services/api";
 import { Link, useNavigate } from "react-router-dom";
 import NotificationBell from "../components/NotificationBell";
 
@@ -97,6 +97,11 @@ const Icons = {
       <circle cx="12" cy="7" r="4"/>
     </svg>
   ),
+  Like: () => (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+    </svg>
+  ),
 };
 
 const extractZone = (address) => {
@@ -123,42 +128,41 @@ const fetchWeatherRisk = async (lat, lng) => {
   }
 };
 
-const calculatePriority = (report, allReports, weatherScore = 0) => {
+const calculatePriority = (report, allReports, weatherScore = 0, likeCount = 0) => {
   let points = 0;
   const maxPoints = 20;
 
+  // 1. Détection IA (max 6 points)
   if (report.aiDetected) {
-    if (report.aiConfidence >= 0.8) {
-      points += 6;
-    } else if (report.aiConfidence >= 0.6) {
-      points += 4;
-    } else if (report.aiConfidence >= 0.4) {
-      points += 2;
-    }
+    if (report.aiConfidence >= 0.8) points += 6;
+    else if (report.aiConfidence >= 0.6) points += 4;
+    else if (report.aiConfidence >= 0.4) points += 2;
   }
 
+  // 2. Signalements à la même adresse (max 6 points)
   const sameAddress = allReports.filter(r =>
     r.address && report.address && r.address === report.address && r.id !== report.id
   ).length;
-  if (sameAddress >= 3) {
-    points += 6;
-  } else if (sameAddress === 2) {
-    points += 4;
-  } else if (sameAddress === 1) {
-    points += 2;
-  }
+  if (sameAddress >= 3) points += 6;
+  else if (sameAddress === 2) points += 4;
+  else if (sameAddress === 1) points += 2;
 
+  // 3. Ancienneté (max 4 points)
   const ageDays = (Date.now() - report.timestamp) / (1000 * 60 * 60 * 24);
-  if (ageDays > 14) {
-    points += 4;
-  } else if (ageDays > 7) {
-    points += 2;
-  } else if (ageDays > 3) {
-    points += 1;
-  }
+  if (ageDays > 14) points += 4;
+  else if (ageDays > 7) points += 2;
+  else if (ageDays > 3) points += 1;
 
+  // 4. Météo (max 4 points)
   points += weatherScore;
-  const percentage = Math.round((points / maxPoints) * 100);
+
+  // 5. LIKES / CONFIRMATIONS (max 4 points)
+  if (likeCount >= 20) points += 4;
+  else if (likeCount >= 10) points += 3;
+  else if (likeCount >= 5) points += 2;
+  else if (likeCount >= 1) points += 1;
+
+  const percentage = Math.min(Math.round((points / maxPoints) * 100), 100);
 
   let level, color, bg;
   if (percentage >= 80) {
@@ -186,16 +190,7 @@ function StatCard({ icon: Icon, label, value, color, subLabel }) {
   return (
     <div className="stat-card" style={{ padding: "12px 14px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <div style={{
-          width: 32,
-          height: 32,
-          borderRadius: 8,
-          background: color + "15",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: color
-        }}>
+        <div style={{ width: 32, height: 32, borderRadius: 8, background: color + "15", display: "flex", alignItems: "center", justifyContent: "center", color: color }}>
           <Icon />
         </div>
       </div>
@@ -209,9 +204,7 @@ function StatCard({ icon: Icon, label, value, color, subLabel }) {
 function SectionHeader({ title, action }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-      <h3 style={{ fontSize: "13px", fontWeight: "600", color: "var(--gray)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-        {title}
-      </h3>
+      <h3 style={{ fontSize: "13px", fontWeight: "600", color: "var(--gray)", textTransform: "uppercase", letterSpacing: "0.5px" }}>{title}</h3>
       {action}
     </div>
   );
@@ -263,8 +256,22 @@ export default function Dashboard() {
         console.error("Erreur météo:", e);
       }
 
-      // Filtrer les signalements PRIORITAIRES (en attente OU confirmés, pas réparés)
-      const activeReports = allReports.filter(r => r.status === "pending" || r.status === "confirmed");
+      // Récupérer les likes pour chaque signalement
+      const reportsWithLikes = await Promise.all(
+        allReports.map(async (report) => {
+          let likeCount = 0;
+          try {
+            const likesData = await getLikes(report.id);
+            likeCount = likesData.likeCount || 0;
+          } catch (e) {
+            console.error("Erreur récupération likes:", e);
+          }
+          return { ...report, likeCount };
+        })
+      );
+
+      // Filtrer les signalements prioritaires (en attente ou confirmés)
+      const activeReports = reportsWithLikes.filter(r => r.status === "pending" || r.status === "confirmed");
 
       const reportsWithWeather = await Promise.all(
         activeReports.map(async (report) => {
@@ -277,7 +284,7 @@ export default function Dashboard() {
           }
           return {
             ...report,
-            priority: calculatePriority(report, allReports, weatherScore),
+            priority: calculatePriority(report, reportsWithLikes, weatherScore, report.likeCount),
             weatherScore,
             weatherCondition
           };
@@ -327,138 +334,79 @@ export default function Dashboard() {
   return (
     <div className="fade-in">
 
-      {/* Header avec user connecté */}
+      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 28 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--dark)", marginBottom: 4 }}>Tableau de bord</h1>
-          {lastUpdated && (
-            <p style={{ fontSize: 12, color: "var(--gray)" }}>
-              Dernière mise à jour : {lastUpdated.toLocaleTimeString("fr-FR")}
-            </p>
-          )}
+          {lastUpdated && <p style={{ fontSize: 12, color: "var(--gray)" }}>Dernière mise à jour : {lastUpdated.toLocaleTimeString("fr-FR")}</p>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          {/* User connecté affiché en haut à droite */}
           {userEmail && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", background: "var(--light)", borderRadius: 40 }}>
               <Icons.User />
               <span style={{ fontSize: 12, color: "var(--dark)" }}>{userEmail}</span>
             </div>
           )}
-          <button onClick={loadDashboard} className="btn btn-outline" style={{ fontSize: 13, padding: "8px 16px" }}>
-            Actualiser
-          </button>
+          <button onClick={loadDashboard} className="btn btn-outline" style={{ fontSize: 13, padding: "8px 16px" }}>Actualiser</button>
           <NotificationBell />
         </div>
       </div>
 
+      {/* Alerte météo */}
       {weatherAlert && (
-        <div style={{
-          background: "#fff8e7",
-          borderLeft: "4px solid #f39c12",
-          borderRadius: "12px",
-          padding: "12px 16px",
-          marginBottom: 20,
-          display: "flex",
-          alignItems: "center",
-          gap: 12
-        }}>
-          <div style={{
-            width: 36,
-            height: 36,
-            borderRadius: 36,
-            background: "rgba(243, 156, 18, 0.15)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center"
-          }}>
+        <div style={{ background: "#fff8e7", borderLeft: "4px solid #f39c12", borderRadius: "12px", padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 36, background: "rgba(243, 156, 18, 0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Icons.WeatherRain />
           </div>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "#e67e22" }}>
-              Météo : {weatherAlert.condition}
-            </div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#e67e22" }}>Météo : {weatherAlert.condition}</div>
             <div style={{ fontSize: 12, color: "#666" }}>{weatherAlert.message}</div>
           </div>
         </div>
       )}
 
+      {/* KPIs */}
       <div className="stat-grid" style={{ gap: 14, marginBottom: 24 }}>
         <StatCard icon={Icons.Total} label="Signalements totaux" value={stats.total} color="var(--primary)" />
-        <StatCard icon={Icons.Pending} label="En attente" value={stats.pending} color="var(--warning)"
-          subLabel={stats.total > 0 ? `${Math.round((stats.pending / stats.total) * 100)}% du total` : null} />
+        <StatCard icon={Icons.Pending} label="En attente" value={stats.pending} color="var(--warning)" subLabel={stats.total > 0 ? `${Math.round((stats.pending / stats.total) * 100)}% du total` : null} />
         <StatCard icon={Icons.Confirmed} label="Confirmés" value={stats.confirmed} color="var(--info)" />
-        <StatCard icon={Icons.Fixed} label="Réparés" value={stats.fixed} color="var(--success)"
-          subLabel={stats.total > 0 ? `${Math.round((stats.fixed / stats.total) * 100)}% du total` : null} />
+        <StatCard icon={Icons.Fixed} label="Réparés" value={stats.fixed} color="var(--success)" subLabel={stats.total > 0 ? `${Math.round((stats.fixed / stats.total) * 100)}% du total` : null} />
       </div>
 
       <div className="stat-grid" style={{ gridTemplateColumns: "repeat(2, 1fr)", gap: 14, marginBottom: 28 }}>
-        <StatCard icon={Icons.Resolution} label="Taux de résolution" value={`${resolutionRate}%`}
-          color={resolutionRate >= 70 ? "var(--success)" : "var(--danger)"}
-          subLabel={resolutionRate >= 70 ? "Objectif atteint" : "Objectif 70%"} />
-        <StatCard icon={Icons.Time} label="Temps moyen" value={`${stats.avgRepair || 0} j`}
-          color="var(--secondary)" subLabel="Délai de traitement" />
+        <StatCard icon={Icons.Resolution} label="Taux de résolution" value={`${resolutionRate}%`} color={resolutionRate >= 70 ? "var(--success)" : "var(--danger)"} subLabel={resolutionRate >= 70 ? "Objectif atteint" : "Objectif 70%"} />
+        <StatCard icon={Icons.Time} label="Temps moyen" value={`${stats.avgRepair || 0} j`} color="var(--secondary)" subLabel="Délai de traitement" />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginBottom: 24 }}>
 
+        {/* Signalements prioritaires */}
         <div className="card">
-          <SectionHeader title="Signalements prioritaires"
-            action={
-              <Link to="/reports?status=pending" style={{ fontSize: 12, color: "var(--primary)", textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
-                Voir tout <Icons.ArrowRight />
-              </Link>
-            }
-          />
+          <SectionHeader title="Signalements prioritaires" action={<Link to="/reports?status=pending" style={{ fontSize: 12, color: "var(--primary)", textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>Voir tout <Icons.ArrowRight /></Link>} />
           {priorityReports.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "32px 0", color: "var(--gray)", fontSize: 13 }}>
-              Aucun signalement prioritaire
-            </div>
+            <div style={{ textAlign: "center", padding: "32px 0", color: "var(--gray)", fontSize: 13 }}>Aucun signalement prioritaire</div>
           ) : priorityReports.map((report, idx) => (
-            <div
-              key={report.id}
-              style={{
-                display: "flex", alignItems: "center", gap: 12,
-                padding: "10px 0",
-                borderBottom: idx < priorityReports.length - 1 ? "1px solid var(--border)" : "none",
-                cursor: "pointer"
-              }}
-              onClick={() => handleReportClick(report)}
-            >
+            <div key={report.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: idx < priorityReports.length - 1 ? "1px solid var(--border)" : "none", cursor: "pointer" }} onClick={() => handleReportClick(report)}>
               <div style={{ width: 4, height: 32, borderRadius: 2, background: report.priority.color, flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--dark)", marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {report.address || "Adresse inconnue"}
-                </div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--dark)", marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{report.address || "Adresse inconnue"}</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--gray)", flexWrap: "wrap" }}>
-                  {report.aiDetected && (
-                    <span style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--info)" }}>
-                      <Icons.AI /> IA {Math.round(report.aiConfidence * 100)}%
-                    </span>
-                  )}
-                  <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                    <Icons.MapPin /> Score {report.priority.score}%
-                  </span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 3, color: report.weatherScore > 0 ? "#f39c12" : "#6c757d" }}>
-                    <Icons.WeatherRain />
-                    {report.weatherCondition && report.weatherCondition !== "Inconnu" ? report.weatherCondition : "Sec"}
-                    {report.weatherScore > 0 && ` +${report.weatherScore}`}
-                  </span>
+                  {report.aiDetected && (<span style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--info)" }}><Icons.AI /> IA {Math.round(report.aiConfidence * 100)}%</span>)}
+                  <span style={{ display: "flex", alignItems: "center", gap: 3 }}><Icons.MapPin /> Score {report.priority.score}%</span>
+                  {report.likeCount > 0 && (<span style={{ display: "flex", alignItems: "center", gap: 3, color: "#e67e22" }}><Icons.Like /> {report.likeCount} confirmation(s)</span>)}
+                  <span style={{ display: "flex", alignItems: "center", gap: 3, color: report.weatherScore > 0 ? "#f39c12" : "#6c757d" }}><Icons.WeatherRain /> {report.weatherCondition && report.weatherCondition !== "Inconnu" ? report.weatherCondition : "Sec"}{report.weatherScore > 0 && ` +${report.weatherScore}`}</span>
                 </div>
               </div>
-              <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600, color: report.priority.color, background: report.priority.bg, flexShrink: 0 }}>
-                {report.priority.level}
-              </span>
+              <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600, color: report.priority.color, background: report.priority.bg, flexShrink: 0 }}>{report.priority.level}</span>
             </div>
           ))}
         </div>
 
+        {/* Zones */}
         <div className="card">
           <SectionHeader title="Zones les plus touchées" />
           {topZones.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "32px 0", color: "var(--gray)", fontSize: 13 }}>
-              Aucune donnée disponible
-            </div>
+            <div style={{ textAlign: "center", padding: "32px 0", color: "var(--gray)", fontSize: 13 }}>Aucune donnée disponible</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
               {topZones.map((zone, idx) => {
@@ -468,14 +416,10 @@ export default function Dashboard() {
                   <div key={zone.name}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ width: 20, height: 20, borderRadius: "50%", background: colors[idx], color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
-                          {idx + 1}
-                        </span>
+                        <span style={{ width: 20, height: 20, borderRadius: "50%", background: colors[idx], color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{idx + 1}</span>
                         <span style={{ fontSize: 13, fontWeight: 500 }}>{zone.name}</span>
                       </div>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>
-                        {zone.count} <span style={{ color: "var(--gray)", fontWeight: 400 }}>signalements</span>
-                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{zone.count} <span style={{ color: "var(--gray)", fontWeight: 400 }}>signalements</span></span>
                     </div>
                     <div style={{ height: 6, background: "var(--border)", borderRadius: 3 }}>
                       <div style={{ height: "100%", borderRadius: 3, background: colors[idx], width: `${pct}%`, transition: "width 0.6s ease" }} />
@@ -488,19 +432,13 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Carte */}
       <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "linear-gradient(135deg, var(--secondary) 0%, var(--dark) 100%)", border: "none", color: "white" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 10, background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Icons.Map />
-          </div>
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>Visualisation cartographique</div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)" }}>Cartographie en temps réel des signalements</div>
-          </div>
+          <div style={{ width: 48, height: 48, borderRadius: 10, background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}><Icons.Map /></div>
+          <div><div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>Visualisation cartographique</div><div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)" }}>Cartographie en temps réel des signalements</div></div>
         </div>
-        <Link to="/map" style={{ background: "var(--primary)", color: "white", padding: "10px 20px", borderRadius: 8, textDecoration: "none", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
-          Accéder <Icons.ArrowRight />
-        </Link>
+        <Link to="/map" style={{ background: "var(--primary)", color: "white", padding: "10px 20px", borderRadius: 8, textDecoration: "none", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>Accéder <Icons.ArrowRight /></Link>
       </div>
     </div>
   );

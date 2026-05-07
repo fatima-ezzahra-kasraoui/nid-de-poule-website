@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchReports, updateStatus, getExportUrl, deleteReport, getReportHistory } from "../services/api";
+import { fetchReports, updateStatus, getExportUrl, deleteReport, getReportHistory, getLikes } from "../services/api";
 import HistoryModal from "../components/HistoryModal";
 
 const Icons = {
@@ -164,8 +164,18 @@ export default function Reports() {
     }
   }
 
-  const handleRowClick = (report) => {
-    setModalDetail(report);
+  const handleRowClick = async (report) => {
+    try {
+      const likesData = await getLikes(report.id);
+      setModalDetail({
+        ...report,
+        likeCount: likesData.likeCount || 0,
+        likedBy: likesData.likedBy || []
+      });
+    } catch (error) {
+      console.error("Erreur chargement likes:", error);
+      setModalDetail({ ...report, likeCount: 0, likedBy: [] });
+    }
   };
 
   if (error) return <p style={{ color: "var(--danger)", padding: 20 }}>{error}</p>;
@@ -448,6 +458,68 @@ export default function Reports() {
                   <div style={{ fontSize: 11, fontWeight: 600, color: "var(--gray)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Description</div>
                   <div style={{ background: "var(--light)", borderRadius: 12, padding: "12px 16px", border: "1px solid var(--border)", fontSize: 13, lineHeight: 1.5, color: modalDetail.description ? "var(--dark)" : "var(--gray)", fontStyle: modalDetail.description ? "normal" : "italic" }}>
                     {modalDetail.description || "Aucune description fournie"}
+                  </div>
+                </div>
+
+                {/* Section COMMENTAIRES */}
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "var(--gray)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Commentaires</div>
+                  <div style={{
+                    background: "var(--light)",
+                    borderRadius: 12,
+                    padding: "12px 16px",
+                    border: "1px solid var(--border)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center"
+                  }}>
+                    <span style={{ fontSize: 13, color: "var(--dark)" }}>
+                      {modalDetail.commentCount || 0} commentaire(s)
+                    </span>
+                    <button
+                      onClick={() => navigate(`/comments/${modalDetail.id}`)}
+                      style={{
+                        fontSize: 12,
+                        color: "var(--primary)",
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        fontWeight: 500
+                      }}
+                    >
+                      Voir tous les commentaires →
+                    </button>
+                  </div>
+                </div>
+
+                {/* Section CONFIRMATIONS */}
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "var(--gray)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Confirmations</div>
+                  <div style={{
+                    background: "var(--light)",
+                    borderRadius: 12,
+                    padding: "12px 16px",
+                    border: "1px solid var(--border)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center"
+                  }}>
+                    <span style={{ fontSize: 13, color: "var(--dark)" }}>
+                      {modalDetail.likeCount || 0} confirmation(s)
+                    </span>
+                    <button
+                      onClick={() => navigate(`/likes/${modalDetail.id}`)}
+                      style={{
+                        fontSize: 12,
+                        color: "var(--primary)",
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        fontWeight: 500
+                      }}
+                    >
+                      Voir tous les validateurs →
+                    </button>
                   </div>
                 </div>
 
