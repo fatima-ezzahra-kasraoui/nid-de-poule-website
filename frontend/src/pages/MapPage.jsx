@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import MarkerClusterGroup from "react-leaflet-cluster";
 import L from "leaflet";
 import { fetchReports, updateStatus } from "../services/api";
+import { useLocation } from "react-router-dom";
 
 const Icons = {
   Map: () => (
@@ -20,35 +21,50 @@ const Icons = {
   ),
 };
 
-function createIcon(status) {
+function createIcon(status, isSelected = false) {
   const colors = { pending: "#f39c12", confirmed: "#3498db", fixed: "#27ae60" };
   const color = colors[status] || "#888";
+  const size = isSelected ? 40 : 28;
+  const border = isSelected ? "4px solid #e67e22" : "3px solid white";
   return L.divIcon({
     className: "",
-    html: `<div style="width:28px;height:28px;border-radius:50% 50% 50% 0;background:${color};transform:rotate(-45deg);border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.2);"></div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 28],
-    popupAnchor: [0, -32],
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50% 50% 50% 0;background:${color};transform:rotate(-45deg);border:${border};box-shadow:0 2px 12px rgba(0,0,0,0.3);"></div>`,
+    iconSize: [size, size],
+    iconAnchor: [size/2, size],
+    popupAnchor: [0, -size],
   });
 }
 
-function FitBounds({ reports }) {
+function FitBounds({ reports, selectedReport }) {
   const map = useMap();
+
   useEffect(() => {
+    // Si un signalement est sélectionné, centrer sur lui
+    if (selectedReport && selectedReport.latitude && selectedReport.longitude) {
+      map.flyTo([selectedReport.latitude, selectedReport.longitude], 16, {
+        duration: 1.5
+      });
+      return;
+    }
+
+    // Sinon, zoomer sur tous les signalements
     if (reports.length > 0) {
       const bounds = reports
         .filter(r => r.latitude && r.longitude)
         .map(r => [r.latitude, r.longitude]);
       if (bounds.length > 0) map.fitBounds(bounds, { padding: [40, 40] });
     }
-  }, [reports]);
+  }, [reports, selectedReport, map]);
+
   return null;
 }
 
-function ResetView({ reports, triggerReset }) {
+function ResetView({ reports, triggerReset, selectedReport, setSelectedReport }) {
   const map = useMap();
   useEffect(() => {
     if (triggerReset && reports.length > 0) {
+      // Réinitialiser la sélection
+      if (setSelectedReport) setSelectedReport(null);
       const bounds = reports
         .filter(r => r.latitude && r.longitude)
         .map(r => [r.latitude, r.longitude]);
@@ -61,9 +77,24 @@ function ResetView({ reports, triggerReset }) {
 const STATUS_LABELS = { pending: "En attente", confirmed: "Confirmé", fixed: "Réparé" };
 
 export default function MapPage() {
+  const location = useLocation();
   const [reports, setReports] = useState([]);
   const [error, setError] = useState(null);
   const [resetView, setResetView] = useState(false);
+  const [selectedReport, setSelectedReport] = useState(null);
+
+  // Récupérer l'ID du signalement depuis le state du Dashboard
+  useEffect(() => {
+    if (location.state?.selectedReportId) {
+      const reportId = location.state.selectedReportId;
+      fetchReports().then(allReports => {
+        const found = allReports.find(r => r.id === reportId);
+        if (found) {
+          setSelectedReport(found);
+        }
+      }).catch(e => setError(e.message));
+    }
+  }, [location.state]);
 
   useEffect(() => {
     fetchReports()
@@ -77,6 +108,10 @@ export default function MapPage() {
       setReports(prev =>
         prev.map(r => r.id === reportId ? { ...r, status: newStatus } : r)
       );
+      // Mettre à jour le signalement sélectionné si c'est celui-ci
+      if (selectedReport && selectedReport.id === reportId) {
+        setSelectedReport(prev => ({ ...prev, status: newStatus }));
+      }
     } catch (e) {
       alert("Erreur mise à jour : " + e.message);
     }
@@ -91,10 +126,16 @@ export default function MapPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--dark)", marginBottom: 4 }}>Carte des signalements</h1>
-          <p style={{ fontSize: 11, color: "var(--gray)" }}>{reports.length} signalement(s) localisé(s)</p>
+          <p style={{ fontSize: 11, color: "var(--gray)" }}>
+            {reports.length} signalement(s) localisé(s)
+            {selectedReport && <span style={{ marginLeft: 12, color: "#e67e22" }}>📍 Signalement sélectionné</span>}
+          </p>
         </div>
         <button
-          onClick={() => setResetView(v => !v)}
+          onClick={() => {
+            setResetView(v => !v);
+            setSelectedReport(null);
+          }}
           style={{
             display: "flex",
             alignItems: "center",
@@ -142,78 +183,81 @@ export default function MapPage() {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
-          <FitBounds reports={reports} />
-          <ResetView reports={reports} triggerReset={resetView} />
+          <FitBounds reports={reports} selectedReport={selectedReport} />
+          <ResetView reports={reports} triggerReset={resetView} selectedReport={selectedReport} setSelectedReport={setSelectedReport} />
 
           <MarkerClusterGroup chunkedLoading>
             {reports
               .filter(r => r.latitude && r.longitude)
-              .map(r => (
-                <Marker
-                  key={r.id}
-                  position={[r.latitude, r.longitude]}
-                  icon={createIcon(r.status)}
-                >
-                  <Popup maxWidth={280}>
-                    <div style={{ minWidth: 200, fontFamily: "'Inter', sans-serif" }}>
-                      {r.photoUrl && (
-                        <img
-                          src={r.photoUrl}
-                          alt="photo du signalement"
-                          style={{
-                            width: "100%",
-                            height: 120,
-                            objectFit: "cover",
-                            borderRadius: 8,
-                            marginBottom: 12
-                          }}
-                          onError={e => e.target.style.display = "none"}
-                        />
-                      )}
-                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>
-                        {r.address || "Adresse non renseignée"}
-                      </div>
-                      <div style={{ color: "#666", fontSize: 11, marginBottom: 8 }}>
-                        {r.userEmail || "Utilisateur anonyme"}<br />
-                        {r.timestamp ? new Date(r.timestamp).toLocaleDateString("fr-FR") : "Date inconnue"}
-                      </div>
-                      <div style={{ marginBottom: 10, fontSize: 12 }}>
-                        Statut : <strong style={{ color: r.status === "pending" ? "#f39c12" : r.status === "confirmed" ? "#3498db" : "#27ae60" }}>
-                          {STATUS_LABELS[r.status] || r.status}
-                        </strong>
-                      </div>
-                      {r.aiDetected && (
-                        <div style={{ color: "#27ae60", fontSize: 11, marginBottom: 10 }}>
-                          Détection IA : {Math.round(r.aiConfidence * 100)}% de confiance
+              .map(r => {
+                const isSelected = selectedReport && selectedReport.id === r.id;
+                return (
+                  <Marker
+                    key={r.id}
+                    position={[r.latitude, r.longitude]}
+                    icon={createIcon(r.status, isSelected)}
+                  >
+                    <Popup maxWidth={280}>
+                      <div style={{ minWidth: 200, fontFamily: "'Inter', sans-serif" }}>
+                        {r.photoUrl && (
+                          <img
+                            src={r.photoUrl}
+                            alt="photo du signalement"
+                            style={{
+                              width: "100%",
+                              height: 120,
+                              objectFit: "cover",
+                              borderRadius: 8,
+                              marginBottom: 12
+                            }}
+                            onError={e => e.target.style.display = "none"}
+                          />
+                        )}
+                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>
+                          {r.address || "Adresse non renseignée"}
                         </div>
-                      )}
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-                        <button
-                          className="btn-warning"
-                          onClick={() => handleUpdateStatus(r.id, "pending")}
-                          style={{ fontSize: 11, padding: "4px 10px" }}
-                        >
-                          En attente
-                        </button>
-                        <button
-                          className="btn-info"
-                          onClick={() => handleUpdateStatus(r.id, "confirmed")}
-                          style={{ fontSize: 11, padding: "4px 10px", background: "#3498db" }}
-                        >
-                          Confirmer
-                        </button>
-                        <button
-                          className="btn-success"
-                          onClick={() => handleUpdateStatus(r.id, "fixed")}
-                          style={{ fontSize: 11, padding: "4px 10px", background: "#27ae60" }}
-                        >
-                          Réparé
-                        </button>
+                        <div style={{ color: "#666", fontSize: 11, marginBottom: 8 }}>
+                          {r.userEmail || "Utilisateur anonyme"}<br />
+                          {r.timestamp ? new Date(r.timestamp).toLocaleDateString("fr-FR") : "Date inconnue"}
+                        </div>
+                        <div style={{ marginBottom: 10, fontSize: 12 }}>
+                          Statut : <strong style={{ color: r.status === "pending" ? "#f39c12" : r.status === "confirmed" ? "#3498db" : "#27ae60" }}>
+                            {STATUS_LABELS[r.status] || r.status}
+                          </strong>
+                        </div>
+                        {r.aiDetected && (
+                          <div style={{ color: "#27ae60", fontSize: 11, marginBottom: 10 }}>
+                            Détection IA : {Math.round(r.aiConfidence * 100)}% de confiance
+                          </div>
+                        )}
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                          <button
+                            className="btn-warning"
+                            onClick={() => handleUpdateStatus(r.id, "pending")}
+                            style={{ fontSize: 11, padding: "4px 10px" }}
+                          >
+                            En attente
+                          </button>
+                          <button
+                            className="btn-info"
+                            onClick={() => handleUpdateStatus(r.id, "confirmed")}
+                            style={{ fontSize: 11, padding: "4px 10px", background: "#3498db" }}
+                          >
+                            Confirmer
+                          </button>
+                          <button
+                            className="btn-success"
+                            onClick={() => handleUpdateStatus(r.id, "fixed")}
+                            style={{ fontSize: 11, padding: "4px 10px", background: "#27ae60" }}
+                          >
+                            Réparé
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  </Popup>
-                </Marker>
-              ))
+                    </Popup>
+                  </Marker>
+                );
+              })
             }
           </MarkerClusterGroup>
         </MapContainer>

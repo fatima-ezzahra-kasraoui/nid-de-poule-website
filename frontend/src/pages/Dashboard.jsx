@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { fetchDashboard, fetchReports } from "../services/api";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import NotificationBell from "../components/NotificationBell";
 
 const Icons = {
@@ -91,6 +91,12 @@ const Icons = {
       <polyline points="12,5 19,12 12,19"/>
     </svg>
   ),
+  User: () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+      <circle cx="12" cy="7" r="4"/>
+    </svg>
+  ),
 };
 
 const extractZone = (address) => {
@@ -121,7 +127,6 @@ const calculatePriority = (report, allReports, weatherScore = 0) => {
   let points = 0;
   const maxPoints = 20;
 
-  // 1. Détection IA (max 6 points = 30%)
   if (report.aiDetected) {
     if (report.aiConfidence >= 0.8) {
       points += 6;
@@ -132,7 +137,6 @@ const calculatePriority = (report, allReports, weatherScore = 0) => {
     }
   }
 
-  // 2. Signalements à la même adresse (max 6 points = 30%)
   const sameAddress = allReports.filter(r =>
     r.address && report.address && r.address === report.address && r.id !== report.id
   ).length;
@@ -144,7 +148,6 @@ const calculatePriority = (report, allReports, weatherScore = 0) => {
     points += 2;
   }
 
-  // 3. Ancienneté (max 4 points = 20%)
   const ageDays = (Date.now() - report.timestamp) / (1000 * 60 * 60 * 24);
   if (ageDays > 14) {
     points += 4;
@@ -154,13 +157,9 @@ const calculatePriority = (report, allReports, weatherScore = 0) => {
     points += 1;
   }
 
-  // 4. Météo (max 4 points = 20%)
   points += weatherScore;
-
-  // Calcul du pourcentage
   const percentage = Math.round((points / maxPoints) * 100);
 
-  // Niveaux de priorité
   let level, color, bg;
   if (percentage >= 80) {
     level = "Critique";
@@ -219,14 +218,27 @@ function SectionHeader({ title, action }) {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [topZones, setTopZones] = useState([]);
   const [priorityReports, setPriorityReports] = useState([]);
   const [weatherAlert, setWeatherAlert] = useState(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [userEmail, setUserEmail] = useState(null);
 
-  useEffect(() => { loadDashboard(); }, []);
+  useEffect(() => {
+    loadDashboard();
+    const user = localStorage.getItem("user");
+    if (user) {
+      try {
+        const userData = JSON.parse(user);
+        setUserEmail(userData.email);
+      } catch (e) {
+        console.error("Erreur parsing user:", e);
+      }
+    }
+  }, []);
 
   const loadDashboard = async () => {
     try {
@@ -251,9 +263,11 @@ export default function Dashboard() {
         console.error("Erreur météo:", e);
       }
 
-      const pendingReports = allReports.filter(r => r.status === "pending");
+      // Filtrer les signalements PRIORITAIRES (en attente OU confirmés, pas réparés)
+      const activeReports = allReports.filter(r => r.status === "pending" || r.status === "confirmed");
+
       const reportsWithWeather = await Promise.all(
-        pendingReports.map(async (report) => {
+        activeReports.map(async (report) => {
           let weatherScore = 0;
           let weatherCondition = "Sec";
           if (report.latitude && report.longitude) {
@@ -295,6 +309,10 @@ export default function Dashboard() {
     }
   };
 
+  const handleReportClick = (report) => {
+    navigate("/map", { state: { selectedReportId: report.id } });
+  };
+
   if (loading) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh", flexDirection: "column", gap: 12 }}>
       <div style={{ width: 32, height: 32, border: "3px solid var(--border)", borderTop: "3px solid var(--primary)", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
@@ -309,6 +327,7 @@ export default function Dashboard() {
   return (
     <div className="fade-in">
 
+      {/* Header avec user connecté */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 28 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--dark)", marginBottom: 4 }}>Tableau de bord</h1>
@@ -318,7 +337,14 @@ export default function Dashboard() {
             </p>
           )}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          {/* User connecté affiché en haut à droite */}
+          {userEmail && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", background: "var(--light)", borderRadius: 40 }}>
+              <Icons.User />
+              <span style={{ fontSize: 12, color: "var(--dark)" }}>{userEmail}</span>
+            </div>
+          )}
           <button onClick={loadDashboard} className="btn btn-outline" style={{ fontSize: 13, padding: "8px 16px" }}>
             Actualiser
           </button>
@@ -386,14 +412,19 @@ export default function Dashboard() {
           />
           {priorityReports.length === 0 ? (
             <div style={{ textAlign: "center", padding: "32px 0", color: "var(--gray)", fontSize: 13 }}>
-              Aucun signalement en attente
+              Aucun signalement prioritaire
             </div>
           ) : priorityReports.map((report, idx) => (
-            <div key={report.id} style={{
-              display: "flex", alignItems: "center", gap: 12,
-              padding: "10px 0",
-              borderBottom: idx < priorityReports.length - 1 ? "1px solid var(--border)" : "none"
-            }}>
+            <div
+              key={report.id}
+              style={{
+                display: "flex", alignItems: "center", gap: 12,
+                padding: "10px 0",
+                borderBottom: idx < priorityReports.length - 1 ? "1px solid var(--border)" : "none",
+                cursor: "pointer"
+              }}
+              onClick={() => handleReportClick(report)}
+            >
               <div style={{ width: 4, height: 32, borderRadius: 2, background: report.priority.color, flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: "var(--dark)", marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -408,7 +439,6 @@ export default function Dashboard() {
                   <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
                     <Icons.MapPin /> Score {report.priority.score}%
                   </span>
-                  {/* Badge météo - TOUJOURS affiché */}
                   <span style={{ display: "flex", alignItems: "center", gap: 3, color: report.weatherScore > 0 ? "#f39c12" : "#6c757d" }}>
                     <Icons.WeatherRain />
                     {report.weatherCondition && report.weatherCondition !== "Inconnu" ? report.weatherCondition : "Sec"}
