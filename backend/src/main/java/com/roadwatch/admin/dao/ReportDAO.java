@@ -179,12 +179,17 @@ public class ReportDAO {
         return list;
     }
 
-    // Sauvegarder un nouveau signalement
     public String saveReport(PotholeReport report) throws ExecutionException, InterruptedException {
         DocumentReference docRef = getDb().collection("reports").document();
-        report.setId(docRef.getId());
+        // Si l'ID est déjà défini, utilise-le, sinon génère-en un
+        String id = report.getId();
+        if (id == null || id.isEmpty()) {
+            id = docRef.getId();
+            report.setId(id);
+        }
         docRef.set(report).get();
-        return docRef.getId();
+        System.out.println("📝 Sauvegarde avec ID: " + id);
+        return id;
     }
 
     // Récupérer un signalement par ID

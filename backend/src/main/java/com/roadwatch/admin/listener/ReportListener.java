@@ -32,10 +32,12 @@ public class ReportListener {
                         if (change.getType() == DocumentChange.Type.ADDED) {
                             String address = change.getDocument().getString("address");
                             if (address == null) address = "emplacement inconnu";
+                            String reportId = change.getDocument().getId();
                             notificationController.sendNotification(
                                     "Nouveau signalement",
                                     "Signalement ajouté à " + address,
-                                    "info"
+                                    "info",
+                                    reportId
                             );
                         }
                     }

@@ -5,6 +5,10 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 @Controller
@@ -21,13 +25,32 @@ public class NotificationController {
         emitter.onCompletion(() -> emitters.remove(emitter));
         emitter.onTimeout(() -> emitters.remove(emitter));
 
+        System.out.println("✅ Nouvel admin connecté aux notifications. Total: " + emitters.size());
 
         return emitter;
     }
 
-    public void sendNotification(String title, String message, String type) {
-        Notification notification = new Notification(title, message, type, System.currentTimeMillis());
-        System.out.println("🔔 Envoi notification: " + title + " à " + emitters.size() + " admins");
+    private final Set<String> sentNotifications = new HashSet<>();
+
+    public void sendNotification(String title, String message, String type, String reportId) {
+        // Éviter les doublons pour le même reportId
+        if (reportId != null && sentNotifications.contains(reportId)) {
+            System.out.println("⚠️ Notification déjà envoyée pour reportId: " + reportId);
+            return;
+        }
+
+        if (reportId != null) {
+            sentNotifications.add(reportId);
+        }
+
+        Map<String, Object> notification = new HashMap<>();
+        notification.put("title", title);
+        notification.put("message", message);
+        notification.put("type", type);
+        notification.put("timestamp", System.currentTimeMillis());
+        notification.put("reportId", reportId);
+
+        System.out.println("🔔 Envoi notification pour reportId: " + reportId);
 
         for (SseEmitter emitter : emitters) {
             try {
@@ -40,22 +63,8 @@ public class NotificationController {
         }
     }
 
-    public static class Notification {
-        private String title;
-        private String message;
-        private String type;
-        private long timestamp;
-
-        public Notification(String title, String message, String type, long timestamp) {
-            this.title = title;
-            this.message = message;
-            this.type = type;
-            this.timestamp = timestamp;
-        }
-
-        public String getTitle() { return title; }
-        public String getMessage() { return message; }
-        public String getType() { return type; }
-        public long getTimestamp() { return timestamp; }
+    // Méthode sans ID (pour compatibilité)
+    public void sendNotification(String title, String message, String type) {
+        sendNotification(title, message, type, null);
     }
 }

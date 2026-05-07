@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import MarkerClusterGroup from "react-leaflet-cluster";
 import L from "leaflet";
 import { fetchReports, updateStatus } from "../services/api";
-import { useLocation } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 
 const Icons = {
   Map: () => (
@@ -39,7 +39,6 @@ function FitBounds({ reports, selectedReport }) {
   const map = useMap();
 
   useEffect(() => {
-    // Si un signalement est sélectionné, centrer sur lui
     if (selectedReport && selectedReport.latitude && selectedReport.longitude) {
       map.flyTo([selectedReport.latitude, selectedReport.longitude], 16, {
         duration: 1.5
@@ -47,7 +46,6 @@ function FitBounds({ reports, selectedReport }) {
       return;
     }
 
-    // Sinon, zoomer sur tous les signalements
     if (reports.length > 0) {
       const bounds = reports
         .filter(r => r.latitude && r.longitude)
@@ -59,18 +57,17 @@ function FitBounds({ reports, selectedReport }) {
   return null;
 }
 
-function ResetView({ reports, triggerReset, selectedReport, setSelectedReport }) {
+function ResetView({ reports, triggerReset, setSelectedReport }) {
   const map = useMap();
   useEffect(() => {
     if (triggerReset && reports.length > 0) {
-      // Réinitialiser la sélection
       if (setSelectedReport) setSelectedReport(null);
       const bounds = reports
         .filter(r => r.latitude && r.longitude)
         .map(r => [r.latitude, r.longitude]);
       if (bounds.length > 0) map.flyToBounds(bounds, { padding: [40, 40], duration: 1.5 });
     }
-  }, [triggerReset]);
+  }, [triggerReset, reports, setSelectedReport, map]);
   return null;
 }
 
@@ -78,23 +75,27 @@ const STATUS_LABELS = { pending: "En attente", confirmed: "Confirmé", fixed: "R
 
 export default function MapPage() {
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [reports, setReports] = useState([]);
   const [error, setError] = useState(null);
   const [resetView, setResetView] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null);
 
-  // Récupérer l'ID du signalement depuis le state du Dashboard
+  // Récupérer l'ID depuis le state OU depuis l'URL
   useEffect(() => {
-    if (location.state?.selectedReportId) {
-      const reportId = location.state.selectedReportId;
-      fetchReports().then(allReports => {
-        const found = allReports.find(r => r.id === reportId);
-        if (found) {
-          setSelectedReport(found);
-        }
-      }).catch(e => setError(e.message));
+    const reportId = location.state?.selectedReportId || searchParams.get("reportId");
+    console.log("📍 ID récupéré depuis URL/state:", reportId);
+
+    if (reportId && reports.length > 0) {
+      const found = reports.find(r => r.id === reportId);
+      if (found) {
+        console.log("📍 Signalement trouvé:", found.address);
+        setSelectedReport(found);
+      } else {
+        console.log("❌ Signalement non trouvé pour ID:", reportId);
+      }
     }
-  }, [location.state]);
+  }, [location.state, searchParams, reports]);
 
   useEffect(() => {
     fetchReports()
@@ -108,7 +109,6 @@ export default function MapPage() {
       setReports(prev =>
         prev.map(r => r.id === reportId ? { ...r, status: newStatus } : r)
       );
-      // Mettre à jour le signalement sélectionné si c'est celui-ci
       if (selectedReport && selectedReport.id === reportId) {
         setSelectedReport(prev => ({ ...prev, status: newStatus }));
       }
@@ -122,7 +122,6 @@ export default function MapPage() {
   return (
     <div className="fade-in">
 
-      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--dark)", marginBottom: 4 }}>Carte des signalements</h1>
@@ -153,7 +152,6 @@ export default function MapPage() {
         </button>
       </div>
 
-      {/* Légende */}
       <div className="card" style={{ marginBottom: 16, padding: "10px 16px" }}>
         <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -171,7 +169,6 @@ export default function MapPage() {
         </div>
       </div>
 
-      {/* Carte */}
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <MapContainer
           center={[35.7595, -5.8340]}
@@ -184,7 +181,7 @@ export default function MapPage() {
           />
 
           <FitBounds reports={reports} selectedReport={selectedReport} />
-          <ResetView reports={reports} triggerReset={resetView} selectedReport={selectedReport} setSelectedReport={setSelectedReport} />
+          <ResetView reports={reports} triggerReset={resetView} setSelectedReport={setSelectedReport} />
 
           <MarkerClusterGroup chunkedLoading>
             {reports

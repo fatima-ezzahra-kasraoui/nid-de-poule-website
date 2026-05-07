@@ -1,42 +1,42 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 
-// Service de notifications
 let eventSource = null;
 let listeners = [];
 
+function createEventSource() {
+    try {
+        eventSource = new EventSource("http://localhost:8080/api/notifications/subscribe");
+
+        eventSource.addEventListener("notification", (event) => {
+            try {
+                const notification = JSON.parse(event.data);
+                console.log("📢 Notification reçue:", notification);
+                listeners.forEach(listener => listener(notification));
+            } catch (e) {
+                console.error("Erreur parsing notification:", e);
+            }
+        });
+
+        eventSource.onopen = () => console.log("✅ Connexion SSE établie");
+
+        eventSource.onerror = () => {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+            setTimeout(() => {
+                if (listeners.length > 0) createEventSource();
+            }, 5000);
+        };
+    } catch (e) {
+        console.error("Erreur connexion SSE:", e);
+    }
+}
+
 function subscribeToNotifications(callback) {
     listeners.push(callback);
-
-    if (!eventSource) {
-        try {
-            eventSource = new EventSource("http://localhost:8080/api/notifications/subscribe");
-
-            eventSource.addEventListener("notification", (event) => {
-                try {
-                    const notification = JSON.parse(event.data);
-                    listeners.forEach(listener => listener(notification));
-                } catch (e) {
-                    console.error("Erreur parsing notification:", e);
-                }
-            });
-
-            eventSource.onerror = (error) => {
-                console.error("Erreur SSE:", error);
-                if (eventSource) {
-                    eventSource.close();
-                    eventSource = null;
-                }
-                setTimeout(() => {
-                    if (listeners.length > 0) {
-                        subscribeToNotifications(listeners[0]);
-                    }
-                }, 5000);
-            };
-        } catch (e) {
-            console.error("Erreur connexion SSE:", e);
-        }
-    }
-
+    if (!eventSource) createEventSource();
     return () => {
         listeners = listeners.filter(l => l !== callback);
         if (listeners.length === 0 && eventSource) {
@@ -45,6 +45,10 @@ function subscribeToNotifications(callback) {
         }
     };
 }
+
+// Clés pour localStorage
+const STORAGE_KEY = "roadwatch_notifications";
+const UNREAD_KEY = "roadwatch_unread_count";
 
 const Icons = {
   Bell: () => (
@@ -88,13 +92,45 @@ const Icons = {
 };
 
 function NotificationBell() {
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
+  // Charger les notifications depuis localStorage au démarrage
+  useEffect(() => {
+    const savedNotifications = localStorage.getItem(STORAGE_KEY);
+    const savedUnreadCount = localStorage.getItem(UNREAD_KEY);
+
+    if (savedNotifications) {
+      try {
+        const parsed = JSON.parse(savedNotifications);
+        // Filtrer uniquement les notifications avec reportId non null
+        const valid = parsed.filter(n => n.reportId != null);
+        setNotifications(valid);
+      } catch (e) {
+        console.error("Erreur chargement notifications:", e);
+      }
+    }
+
+    if (savedUnreadCount) {
+      setUnreadCount(parseInt(savedUnreadCount) || 0);
+    }
+  }, []);
+
+  // Sauvegarder les notifications dans localStorage à chaque changement
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(notifications));
+    localStorage.setItem(UNREAD_KEY, unreadCount.toString());
+  }, [notifications, unreadCount]);
+
   useEffect(() => {
     const unsubscribe = subscribeToNotifications((notification) => {
-      setNotifications(prev => [notification, ...prev].slice(0, 20));
+      console.log("📢 Nouvelle notification:", notification);
+      setNotifications(prev => {
+        const newNotifications = [notification, ...prev].slice(0, 50);
+        return newNotifications;
+      });
       setUnreadCount(prev => prev + 1);
 
       if ("Notification" in window && Notification.permission === "granted") {
@@ -117,6 +153,22 @@ function NotificationBell() {
   const clearNotifications = () => {
     setNotifications([]);
     setUnreadCount(0);
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(UNREAD_KEY);
+  };
+
+  const handleNotificationClick = (notification) => {
+    console.log("🔔 Notification cliquée:", notification);
+    console.log("🔔 reportId:", notification.reportId);
+
+    if (notification.reportId && notification.reportId !== "null" && notification.reportId !== "undefined") {
+      console.log("✅ Redirection vers /map avec ID:", notification.reportId);
+      navigate("/map", { state: { selectedReportId: notification.reportId } });
+    } else {
+      console.log("❌ Pas de reportId valide");
+      navigate("/map");
+    }
+    setShowDropdown(false);
   };
 
   const getNotificationStyle = (type) => {
@@ -163,14 +215,6 @@ function NotificationBell() {
           alignItems: "center",
           gap: "8px",
           transition: "all 0.2s ease"
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = "rgba(230, 126, 34, 0.25)";
-          e.currentTarget.style.borderColor = "rgba(230, 126, 34, 0.5)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = "rgba(230, 126, 34, 0.15)";
-          e.currentTarget.style.borderColor = "rgba(230, 126, 34, 0.3)";
         }}
       >
         <Icons.Bell />
@@ -232,8 +276,6 @@ function NotificationBell() {
                   padding: "4px 8px",
                   borderRadius: "6px"
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = "#eee"}
-                onMouseLeave={(e) => e.currentTarget.style.background = "none"}
               >
                 Tout effacer
               </button>
@@ -253,6 +295,7 @@ function NotificationBell() {
               notifications.map((notif, idx) => (
                 <div
                   key={idx}
+                  onClick={() => handleNotificationClick(notif)}
                   style={{
                     padding: "14px 16px",
                     borderBottom: "1px solid #f0f0f0",
@@ -304,7 +347,7 @@ function NotificationBell() {
             textAlign: "center",
             background: "#fafafa"
           }}>
-            RoadWatch • Nouveaux signalements en temps réel
+            Cliquez sur une notification pour voir le signalement sur la carte
           </div>
         </div>
       )}

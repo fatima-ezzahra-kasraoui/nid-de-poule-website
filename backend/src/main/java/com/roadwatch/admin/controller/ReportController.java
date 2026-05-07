@@ -138,7 +138,8 @@ public class ReportController {
                 notificationController.sendNotification(
                         "Signalement résolu",
                         "Un nid-de-poule a été marqué comme réparé",
-                        "success"
+                        "success",
+                        id
                 );
             }
 
@@ -155,14 +156,19 @@ public class ReportController {
     @PostMapping("/reports")
     public ResponseEntity<Map<String, Object>> createReport(@RequestBody PotholeReport report) {
         try {
-            String id = reportDAO.saveReport(report);
+            // Force l'ID manuellement
+            String id = java.util.UUID.randomUUID().toString();
             report.setId(id);
 
+            reportDAO.saveReport(report);
+
             String address = report.getAddress() != null ? report.getAddress() : "emplacement inconnu";
+
             notificationController.sendNotification(
                     "Nouveau signalement",
                     "Nid-de-poule signalé à " + address,
-                    "info"
+                    "info",
+                    id
             );
 
             Map<String, Object> response = new HashMap<>();
