@@ -21,7 +21,8 @@ public class PotholeReport {
     private List<String> likedBy;
     private int commentCount;
     private int pointsAwarded;
-    private String badgeEarned;
+    private Object badgeEarned;
+    private int likeCount;
 
     public PotholeReport() {}
 
@@ -81,6 +82,8 @@ public class PotholeReport {
     public void setDescription(String description) { this.description = description; }
     public int getPointsAwarded() { return pointsAwarded; }
     public void setPointsAwarded(int pointsAwarded) { this.pointsAwarded = pointsAwarded; }
-    public String getBadgeEarned() { return badgeEarned; }
-    public void setBadgeEarned(String badgeEarned) { this.badgeEarned = badgeEarned; }
+    public Object getBadgeEarned() { return badgeEarned; }
+    public void setBadgeEarned(Object badgeEarned) { this.badgeEarned = badgeEarned; }
+    public void setLikeCount(int lc) {}
+
 }

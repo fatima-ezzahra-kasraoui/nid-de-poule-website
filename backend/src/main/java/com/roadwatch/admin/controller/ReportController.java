@@ -2,32 +2,27 @@ package com.roadwatch.admin.controller;
 
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.UserRecord;
-import com.itextpdf.text.Document;
-import com.itextpdf.text.DocumentException;
-import com.itextpdf.text.FontFactory;
-import com.itextpdf.text.PageSize;
-import com.itextpdf.text.Paragraph;
-import com.itextpdf.text.Phrase;
-import com.itextpdf.text.BaseColor;
-import com.itextpdf.text.pdf.PdfPTable;
+import com.itextpdf.text.*;
 import com.itextpdf.text.pdf.PdfPCell;
+import com.itextpdf.text.pdf.PdfPTable;
 import com.itextpdf.text.pdf.PdfWriter;
 import com.roadwatch.admin.dao.CommentDAO;
 import com.roadwatch.admin.dao.HistoryDAO;
 import com.roadwatch.admin.dao.ReportDAO;
+import com.roadwatch.admin.model.Comment;
 import com.roadwatch.admin.model.HistoryEntry;
 import com.roadwatch.admin.model.PotholeReport;
 import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import com.roadwatch.admin.model.Comment;
 
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.*;
-
+import java.util.List;
 
 @RestController
 @RequestMapping("/api")
@@ -40,6 +35,7 @@ public class ReportController {
 
     @Autowired
     private HistoryDAO historyDAO;
+
     @Autowired
     private CommentDAO commentDAO;
 
@@ -99,13 +95,10 @@ public class ReportController {
             @RequestParam(required = false) Long dateTo) {
         try {
             List<PotholeReport> reports = reportDAO.getReportsFiltered(status, dateFrom, dateTo);
-
-            // Ajouter le nombre de commentaires pour chaque signalement
             for (PotholeReport report : reports) {
                 int commentCount = commentDAO.getCommentsCount(report.getId());
                 report.setCommentCount(commentCount);
             }
-
             return ResponseEntity.ok(reports);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
@@ -122,7 +115,6 @@ public class ReportController {
         }
     }
 
-    // Ajoute un endpoint pour récupérer un signalement avec son commentCount
     @GetMapping("/reports/{id}")
     public ResponseEntity<?> getReportById(@PathVariable String id) {
         try {
@@ -144,39 +136,21 @@ public class ReportController {
             @RequestBody Map<String, String> body) {
         try {
             String newStatus = body.get("status");
-
             if (newStatus == null || !newStatus.matches("pending|confirmed|fixed")) {
                 return ResponseEntity.badRequest().build();
             }
 
             PotholeReport report = reportDAO.getReportById(id);
             String oldStatus = report.getStatus();
-
             reportDAO.updateStatus(id, newStatus);
 
-            HistoryEntry history = new HistoryEntry(
-                    id,
-                    "STATUS_CHANGE",
-                    oldStatus,
-                    newStatus,
-                    "admin@roadwatch.com"
-            );
-            historyDAO.addHistoryEntry(history);
+            historyDAO.addHistoryEntry(new HistoryEntry(id, "STATUS_CHANGE", oldStatus, newStatus, "admin@roadwatch.com"));
 
             if ("fixed".equals(newStatus)) {
-                notificationController.sendNotification(
-                        "Signalement résolu",
-                        "Un nid-de-poule a été marqué comme réparé",
-                        "success",
-                        id
-                );
+                notificationController.sendNotification("Signalement résolu", "Un nid-de-poule a été marqué comme réparé", "success", id);
             }
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("status", newStatus);
-            return ResponseEntity.ok(response);
-
+            return ResponseEntity.ok(Map.of("success", true, "status", newStatus));
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
         }
@@ -185,25 +159,14 @@ public class ReportController {
     @PostMapping("/reports")
     public ResponseEntity<Map<String, Object>> createReport(@RequestBody PotholeReport report) {
         try {
-            // Force l'ID manuellement
             String id = java.util.UUID.randomUUID().toString();
             report.setId(id);
-
             reportDAO.saveReport(report);
 
             String address = report.getAddress() != null ? report.getAddress() : "emplacement inconnu";
+            notificationController.sendNotification("Nouveau signalement", "Nid-de-poule signalé à " + address, "info", id);
 
-            notificationController.sendNotification(
-                    "Nouveau signalement",
-                    "Nid-de-poule signalé à " + address,
-                    "info",
-                    id
-            );
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("id", id);
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(Map.of("success", true, "id", id));
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }
@@ -214,14 +177,11 @@ public class ReportController {
         try {
             List<PotholeReport> all = reportDAO.getAllReports();
             boolean exists = all.stream().anyMatch(r -> r.getId().equals(id));
-
             if (!exists) {
                 return ResponseEntity.status(404).body(Map.of("error", "Signalement non trouvé"));
             }
-
             reportDAO.deleteReport(id);
             return ResponseEntity.ok(Map.of("success", true, "message", "Signalement supprimé"));
-
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
         }
@@ -253,15 +213,13 @@ public class ReportController {
 
         try (Workbook wb = new XSSFWorkbook()) {
             Sheet sheet = wb.createSheet("Signalements");
-
             Row header = sheet.createRow(0);
             CellStyle headerStyle = wb.createCellStyle();
             Font font = wb.createFont();
             font.setBold(true);
             headerStyle.setFont(font);
 
-            String[] cols = {"ID", "Email", "Adresse", "Latitude", "Longitude",
-                    "Statut", "IA Détecté", "Confiance IA", "Date"};
+            String[] cols = {"ID", "Email", "Adresse", "Latitude", "Longitude", "Statut", "IA Détecté", "Confiance IA", "Date"};
             for (int i = 0; i < cols.length; i++) {
                 Cell cell = header.createCell(i);
                 cell.setCellValue(cols[i]);
@@ -282,7 +240,6 @@ public class ReportController {
                 row.createCell(7).setCellValue(r.getAiConfidencePercent() + "%");
                 row.createCell(8).setCellValue(r.getFormattedDate());
             }
-
             wb.write(resp.getOutputStream());
         }
     }
@@ -328,7 +285,7 @@ public class ReportController {
         doc.add(table);
         doc.close();
     }
-    // Récupérer les commentaires d'un signalement (avec pagination)
+
     @GetMapping("/reports/{id}/comments")
     public ResponseEntity<?> getComments(
             @PathVariable String id,
@@ -336,23 +293,21 @@ public class ReportController {
             @RequestParam(defaultValue = "20") int limit) {
         try {
             int offset = page * limit;
-            List<com.roadwatch.admin.model.Comment> comments = commentDAO.getCommentsByReportId(id, limit, offset);
+            List<Comment> comments = commentDAO.getCommentsByReportId(id, limit, offset);
             int total = commentDAO.getCommentsCount(id);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("comments", comments);
-            response.put("total", total);
-            response.put("page", page);
-            response.put("limit", limit);
-            response.put("totalPages", (int) Math.ceil((double) total / limit));
-
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(Map.of(
+                    "comments", comments,
+                    "total", total,
+                    "page", page,
+                    "limit", limit,
+                    "totalPages", (int) Math.ceil((double) total / limit)
+            ));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
         }
     }
 
-    // Supprimer un commentaire
     @DeleteMapping("/reports/{reportId}/comments/{commentId}")
     public ResponseEntity<?> deleteComment(@PathVariable String reportId, @PathVariable String commentId) {
         try {
@@ -367,12 +322,7 @@ public class ReportController {
     public ResponseEntity<?> getLikes(@PathVariable String id) {
         try {
             List<String> likedBy = reportDAO.getLikedByRaw(id);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("likeCount", likedBy.size());
-            response.put("likedBy", likedBy);
-
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(Map.of("likeCount", likedBy.size(), "likedBy", likedBy));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
         }
@@ -403,7 +353,6 @@ public class ReportController {
                     String email = userRecord.getEmail() != null ? userRecord.getEmail() : "—";
                     String displayName = userRecord.getDisplayName() != null ? userRecord.getDisplayName() : "";
 
-                    // Priorité à Firestore pour le displayName
                     com.google.cloud.firestore.DocumentSnapshot doc =
                             firestore.collection("users").document(userId).get().get();
                     if (doc.exists()) {
@@ -422,20 +371,15 @@ public class ReportController {
                 likesWithInfo.add(likeInfo);
             }
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("likes", likesWithInfo);
-            response.put("total", total);
-            response.put("page", page);
-            response.put("limit", limit);
-            response.put("totalPages", (int) Math.ceil((double) total / limit));
-
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(Map.of(
+                    "likes", likesWithInfo,
+                    "total", total,
+                    "page", page,
+                    "limit", limit,
+                    "totalPages", (int) Math.ceil((double) total / limit)
+            ));
         } catch (Exception e) {
-            e.printStackTrace();
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
         }
     }
-
-
-
 }

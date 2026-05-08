@@ -26,10 +26,11 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        // Routes publiques
-                        .requestMatchers("/api/auth/login").permitAll()
+                        // Routes publiques EN PREMIER
+                        .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/notifications/subscribe").permitAll()
-                        .requestMatchers("/api/weather/**").permitAll()  // ← AJOUTE CETTE LIGNE
+                        .requestMatchers("/api/weather/**").permitAll()
+                        // Routes protégées ensuite
                         .requestMatchers(HttpMethod.DELETE, "/api/reports/**").authenticated()
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().authenticated()
