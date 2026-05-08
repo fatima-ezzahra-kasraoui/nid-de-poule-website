@@ -18,8 +18,10 @@ public class PotholeReport {
     private float aiConfidence;
     private long timestamp;
     private String description;
-    private List<String> likedBy;      // ← AJOUTE CETTE LIGNE
+    private List<String> likedBy;
     private int commentCount;
+    private int pointsAwarded;
+    private String badgeEarned;
 
     public PotholeReport() {}
 
@@ -77,4 +79,8 @@ public class PotholeReport {
     public void setTimestamp(long timestamp) { this.timestamp = timestamp; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+    public int getPointsAwarded() { return pointsAwarded; }
+    public void setPointsAwarded(int pointsAwarded) { this.pointsAwarded = pointsAwarded; }
+    public String getBadgeEarned() { return badgeEarned; }
+    public void setBadgeEarned(String badgeEarned) { this.badgeEarned = badgeEarned; }
 }
