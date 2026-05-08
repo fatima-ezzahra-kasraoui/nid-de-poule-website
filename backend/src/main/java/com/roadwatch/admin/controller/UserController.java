@@ -1,5 +1,6 @@
 package com.roadwatch.admin.controller;
 
+import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.UserRecord;
 import com.roadwatch.admin.dao.FirebaseAuthDAO;
 import com.roadwatch.admin.dao.ReportDAO;
@@ -19,18 +20,20 @@ public class UserController {
     @Autowired
     private ReportDAO reportDAO;
 
-    // GET /api/users - Liste tous les utilisateurs Firebase Auth
     @GetMapping
     public ResponseEntity<?> getAllUsers() {
         try {
             List<Map<String, Object>> users = new ArrayList<>();
             List<UserRecord> firebaseUsers = firebaseAuthDAO.getAllUsers();
 
+            com.google.cloud.firestore.Firestore firestore =
+                    com.google.firebase.cloud.FirestoreClient.getFirestore();
+
             for (UserRecord user : firebaseUsers) {
                 Map<String, Object> userInfo = new HashMap<>();
                 userInfo.put("uid", user.getUid());
                 userInfo.put("email", user.getEmail());
-                userInfo.put("displayName", user.getDisplayName());
+                userInfo.put("displayName", user.getDisplayName()); // fallback Auth
                 userInfo.put("photoUrl", user.getPhotoUrl());
                 userInfo.put("creationTimestamp", user.getUserMetadata().getCreationTimestamp());
                 userInfo.put("lastSignInTimestamp", user.getUserMetadata().getLastSignInTimestamp());
@@ -38,7 +41,19 @@ public class UserController {
                 userInfo.put("phoneNumber", user.getPhoneNumber());
                 userInfo.put("emailVerified", user.isEmailVerified());
 
-                // Compter les signalements de cet utilisateur
+                // ← AJOUT : lire le displayName depuis Firestore
+                try {
+                    com.google.cloud.firestore.DocumentSnapshot doc =
+                            firestore.collection("users").document(user.getUid()).get().get();
+
+                    if (doc.exists()) {
+                        String firestoreName = doc.getString("displayName");
+                        if (firestoreName != null && !firestoreName.isEmpty()) {
+                            userInfo.put("displayName", firestoreName); // écrase Auth si Firestore a un nom
+                        }
+                    }
+                } catch (Exception ignored) {}
+
                 int reportCount = reportDAO.getReportsCountByUserId(user.getUid());
                 userInfo.put("reportCount", reportCount);
 
@@ -130,6 +145,46 @@ public class UserController {
         try {
             firebaseAuthDAO.deleteUser(uid);
             return ResponseEntity.ok(Map.of("success", true));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // Synchroniser les displayNames depuis Firestore vers Firebase Auth
+    @PostMapping("/sync-display-names")
+    public ResponseEntity<?> syncDisplayNamesFromFirestore() {
+        try {
+            List<UserRecord> authUsers = firebaseAuthDAO.getAllUsers();
+            int updated = 0;
+
+            com.google.cloud.firestore.Firestore firestore =
+                    com.google.firebase.cloud.FirestoreClient.getFirestore();
+
+            for (UserRecord authUser : authUsers) {
+                String uid = authUser.getUid();
+
+                com.google.cloud.firestore.DocumentSnapshot userDoc =
+                        firestore.collection("users").document(uid).get().get();
+
+                if (userDoc.exists()) {
+                    String displayName = userDoc.getString("displayName");
+
+                    if (displayName != null && !displayName.isEmpty()) {
+                        String currentName = authUser.getDisplayName();
+                        if (!displayName.equals(currentName)) {
+                            UserRecord.UpdateRequest request = new UserRecord.UpdateRequest(uid)
+                                    .setDisplayName(displayName);
+                            FirebaseAuth.getInstance().updateUser(request);
+                            updated++;
+                        }
+                    }
+                }
+            }
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "updated", updated
+            ));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
         }

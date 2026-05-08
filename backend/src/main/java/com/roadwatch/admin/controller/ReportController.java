@@ -386,13 +386,13 @@ public class ReportController {
         try {
             List<String> allUserIds = reportDAO.getLikedByRaw(id);
 
-            System.out.println("👉 likedBy size: " + allUserIds.size());
-            System.out.println("👉 likedBy: " + allUserIds);
-
             int total = allUserIds.size();
             int start = page * limit;
             int end = Math.min(start + limit, total);
             List<String> paginated = start < total ? allUserIds.subList(start, end) : new ArrayList<>();
+
+            com.google.cloud.firestore.Firestore firestore =
+                    com.google.firebase.cloud.FirestoreClient.getFirestore();
 
             List<Map<String, Object>> likesWithInfo = new ArrayList<>();
             for (String userId : paginated) {
@@ -400,8 +400,21 @@ public class ReportController {
                 likeInfo.put("userId", userId);
                 try {
                     UserRecord userRecord = FirebaseAuth.getInstance().getUser(userId);
-                    likeInfo.put("userEmail", userRecord.getEmail() != null ? userRecord.getEmail() : "—");
-                    likeInfo.put("displayName", userRecord.getDisplayName() != null ? userRecord.getDisplayName() : "");
+                    String email = userRecord.getEmail() != null ? userRecord.getEmail() : "—";
+                    String displayName = userRecord.getDisplayName() != null ? userRecord.getDisplayName() : "";
+
+                    // Priorité à Firestore pour le displayName
+                    com.google.cloud.firestore.DocumentSnapshot doc =
+                            firestore.collection("users").document(userId).get().get();
+                    if (doc.exists()) {
+                        String firestoreName = doc.getString("displayName");
+                        if (firestoreName != null && !firestoreName.isEmpty()) {
+                            displayName = firestoreName;
+                        }
+                    }
+
+                    likeInfo.put("userEmail", email);
+                    likeInfo.put("displayName", displayName);
                 } catch (Exception e) {
                     likeInfo.put("userEmail", "Inconnu");
                     likeInfo.put("displayName", "");

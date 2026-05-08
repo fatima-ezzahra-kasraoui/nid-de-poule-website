@@ -130,10 +130,10 @@ export default function Likes() {
                 <tr key={idx}>
                   <td style={{ fontSize: 13 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <div style={{ width: 32, height: 32, borderRadius: 32, background: "rgba(230, 126, 34, 0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <Icons.User />
+                      <div style={{ width: 32, height: 32, borderRadius: 32, background: "rgba(230, 126, 34, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 600, color: "var(--primary)" }}>
+                        {like.displayName ? like.displayName[0].toUpperCase() : <Icons.User />}
                       </div>
-                      <span>{like.displayName || "—"}</span>
+                      <span>{like.displayName || like.userId?.substring(0, 12) || "—"}</span>
                     </div>
                    </td>
                   <td style={{ fontSize: 13 }}>{like.userEmail || "—"} </td>
