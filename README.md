@@ -1,246 +1,333 @@
-# 🚧 RoadWatch — Documentation Complète
+# 🚧 RoadWatch — Plateforme de gestion des nids-de-poule
 
-> Stack : **Spring Boot (Java)** + **React (Vite)** + **Firebase Firestore**
+> Stack : **Spring Boot 3.2 (Java 17)** · **React 18 (Vite)** · **Firebase Firestore + Auth**
+
+RoadWatch est une application web fullstack permettant aux administrateurs de gérer les signalements de nids-de-poule soumis par des utilisateurs mobiles. Elle offre un tableau de bord analytique, une carte interactive, un système de priorité IA, et des exports PDF/Excel.
+
+---
+
+## 📋 Sommaire
+
+- [Fonctionnalités](#-fonctionnalités)
+- [Architecture](#-architecture)
+- [Structure du projet](#-structure-du-projet)
+- [Installation](#-installation)
+- [Endpoints API](#-endpoints-api)
+- [Tests](#-tests)
+- [Variables d'environnement](#-variables-denvironnement)
+
+---
+
+## ✨ Fonctionnalités
+
+**Tableau de bord**
+- KPIs en temps réel (total, en attente, confirmés, réparés)
+- Taux de résolution et temps moyen de réparation
+- Signalements prioritaires avec score IA + météo + likes
+- Zones les plus touchées
+
+**Carte interactive**
+- Visualisation Leaflet avec clustering des marqueurs
+- Marqueurs colorés par statut (orange / bleu / vert)
+- Mise à jour du statut directement depuis la popup
+- Navigation depuis le tableau de bord vers un signalement spécifique
+
+**Gestion des signalements**
+- Filtres par statut et par plage de dates
+- Historique des changements de statut
+- Commentaires paginés par signalement
+- Système de likes / confirmations citoyennes
+- Export Excel et PDF
+
+**Utilisateurs**
+- Liste des comptes Firebase Auth avec stats
+- Activation / désactivation / suppression de comptes
+- Recherche par email, nom ou UID
+
+**Notifications**
+- Notifications temps réel via Server-Sent Events (SSE)
+- Déduplication automatique par `reportId`
+
+**Météo**
+- Score de risque météo par coordonnées GPS
+- Intégration dans le calcul de priorité des signalements
+
+---
+
+## 🏗️ Architecture
+
+```
+Utilisateur mobile (app)
+        ↓ signalement
+Firebase Firestore ←────────────────────────────────┐
+        ↓                                            │
+ReportListener (SSE) → NotificationController        │
+        ↓                                            │
+Spring Boot (port 8080)                              │
+  ├── AuthController      → JWT + Firebase Auth      │
+  ├── ReportController    → CRUD signalements ────────┘
+  ├── UserController      → Gestion utilisateurs
+  ├── WeatherController   → Score météo
+  └── NotificationController → SSE
+        ↓ JSON
+React / Vite (port 5173)
+  ├── Dashboard.jsx       → KPIs + priorités
+  ├── MapPage.jsx         → Carte Leaflet
+  ├── Reports.jsx         → Liste + filtres
+  ├── Users.jsx           → Gestion comptes
+  ├── Stats.jsx           → Graphiques
+  └── Comments.jsx / Likes.jsx
+```
 
 ---
 
 ## 📁 Structure du projet
 
 ```
-roadwatch-modern/
-├── backend/                          ← Spring Boot (port 8080)
-│   ├── pom.xml                       ← Dépendances Maven (iText, POI, Firebase...)
-│   └── src/main/
-│       ├── resources/
-│       │   ├── application.properties
-│       │   └── serviceAccountKey.json  ← 🔑 FICHIER SECRET FIREBASE (à placer ici)
-│       └── java/com/roadwatch/admin/
-│           ├── RoadWatchApplication.java  ← Point d'entrée Spring Boot
-│           ├── config/
-│           │   ├── FirebaseConfig.java    ← Initialise Firebase au démarrage
-│           │   └── CorsConfig.java        ← Autorise React à appeler l'API
-│           ├── model/
-│           │   └── PotholeReport.java     ← Représente un signalement (données)
-│           ├── dao/
-│           │   └── ReportDAO.java         ← Toutes les requêtes Firebase/Firestore
-│           └── controller/
-│               └── ReportController.java  ← Gère toutes les requêtes HTTP (API REST)
+roadwatch/
+├── backend/
+│   ├── pom.xml
+│   └── src/
+│       ├── main/
+│       │   ├── resources/
+│       │   │   ├── application.properties
+│       │   │   └── serviceAccountKey.json        ← 🔑 SECRET (ne pas committer)
+│       │   └── java/com/roadwatch/admin/
+│       │       ├── RoadWatchApplication.java
+│       │       ├── config/
+│       │       │   ├── FirebaseConfig.java        ← Initialise Firebase Admin SDK
+│       │       │   ├── SecurityConfig.java        ← Spring Security + JWT
+│       │       │   ├── JwtService.java            ← Génération / validation JWT
+│       │       │   └── CorsConfig.java
+│       │       ├── model/
+│       │       │   ├── PotholeReport.java
+│       │       │   ├── Comment.java
+│       │       │   └── HistoryEntry.java
+│       │       ├── dao/
+│       │       │   ├── ReportDAO.java
+│       │       │   ├── FirebaseAuthDAO.java
+│       │       │   ├── CommentDAO.java
+│       │       │   └── HistoryDAO.java
+│       │       ├── controller/
+│       │       │   ├── ReportController.java
+│       │       │   ├── AuthController.java
+│       │       │   ├── UserController.java
+│       │       │   ├── WeatherController.java
+│       │       │   └── NotificationController.java
+│       │       ├── service/
+│       │       │   └── WeatherService.java
+│       │       └── listener/
+│       │           └── ReportListener.java        ← Écoute Firestore en temps réel
+│       └── test/
+│           └── java/com/roadwatch/admin/          ← 105 tests JUnit 5
 │
-└── frontend/                         ← React + Vite (port 5173)
-    ├── package.json                  ← Dépendances npm
-    ├── .npmrc                        ← legacy-peer-deps=true (compatibilité)
-    ├── index.html
+└── frontend/
+    ├── package.json
+    ├── vite.config.js
     └── src/
-        ├── main.jsx                  ← Point d'entrée React + Sidebar + Router
+        ├── main.jsx                               ← Router + Sidebar
         ├── services/
-        │   └── api.js                ← Tous les appels vers Spring Boot
-        └── pages/
-            ├── Dashboard.jsx         ← Page stats générales
-            ├── MapPage.jsx           ← Page carte interactive (Leaflet)
-            ├── Reports.jsx           ← Page liste des signalements
-            └── Stats.jsx             ← Page graphiques (Chart.js)
+        │   ├── api.js                             ← Tous les appels HTTP
+        │   └── auth.js                            ← Gestion token JWT
+        ├── pages/
+        │   ├── Dashboard.jsx
+        │   ├── MapPage.jsx
+        │   ├── Reports.jsx
+        │   ├── Users.jsx
+        │   ├── Stats.jsx
+        │   ├── Comments.jsx
+        │   ├── Likes.jsx
+        │   └── Login.jsx
+        └── components/
+            ├── NotificationBell.jsx
+            └── HistoryModal.jsx
 ```
 
 ---
 
-## 🔑 Fichier Secret Firebase (serviceAccountKey.json)
+## 🚀 Installation
 
-Ce fichier est **obligatoire** pour que le backend puisse accéder à Firebase.
+### Prérequis
 
-**Comment l'obtenir :**
-1. Aller sur [Firebase Console](https://console.firebase.google.com)
-2. Ton projet → ⚙️ Paramètres → **Comptes de service**
-3. Cliquer sur **Générer une nouvelle clé privée**
-4. Télécharger le fichier `.json`
+| Outil | Version |
+|---|---|
+| Java | 17+ |
+| Maven | 3.9+ |
+| Node.js | 18+ |
+| IntelliJ IDEA | recommandé pour le backend |
 
-**Où le placer :**
+---
+
+### 1. Clé Firebase
+
+1. [Firebase Console](https://console.firebase.google.com) → ton projet → ⚙️ Paramètres → **Comptes de service**
+2. **Générer une nouvelle clé privée** → télécharger le `.json`
+3. Le placer dans :
+
 ```
 backend/src/main/resources/serviceAccountKey.json
 ```
 
-> ⚠️ Ne jamais committer ce fichier sur GitHub ! Ajouter au `.gitignore` :
-> ```
-> src/main/resources/serviceAccountKey.json
-> ```
+> ⚠️ Ce fichier est dans `.gitignore` — ne jamais le committer.
 
 ---
 
-## 🚀 Installation et lancement
+### 2. Backend
 
-### Prérequis
-- [IntelliJ IDEA](https://www.jetbrains.com/idea/) (pour le backend)
-- [VSCode](https://code.visualstudio.com/) (pour le frontend)
-- Java 17+ (ou 21+)
-- Node.js 18+
+```bash
+cd backend
 
----
+# Avec le wrapper Maven
+./mvnw spring-boot:run
 
-### 1. Backend — IntelliJ IDEA
+# Ou avec Maven installé
+mvn spring-boot:run
+```
 
-1. Ouvrir IntelliJ → **File > Open** → sélectionner le dossier `backend/`
-2. Attendre qu'IntelliJ télécharge les dépendances Maven automatiquement
-3. Vérifier que `serviceAccountKey.json` est dans `src/main/resources/`
-4. Ouvrir `RoadWatchApplication.java`
-5. Cliquer sur le bouton ▶️ vert en haut à droite (ou clic droit → **Run**)
-
-✅ Le backend est prêt quand tu vois dans la console :
+✅ Prêt quand la console affiche :
 ```
 ✅ Firebase Admin SDK initialisé
 Tomcat started on port 8080
-Started RoadWatchApplication
 ```
 
 ---
 
-### 2. Frontend — VSCode
+### 3. Frontend
 
-1. Ouvrir VSCode → **File > Open Folder** → sélectionner le dossier `frontend/`
-2. Ouvrir le terminal VSCode : **Ctrl + `**
-3. S'assurer que le terminal est en **Command Prompt (cmd)** et non PowerShell
-4. Exécuter les commandes :
-
-```cmd
+```bash
+cd frontend
 npm install
 npm run dev
 ```
 
-✅ Le frontend est prêt quand tu vois :
+✅ Prêt quand la console affiche :
 ```
-VITE ready in Xms
+VITE ready
 ➜ Local: http://localhost:5173/
 ```
 
----
-
-### 3. Ouvrir l'application
-
-Aller sur **http://localhost:5173** dans le navigateur.
-
-> ⚠️ Le backend (IntelliJ) doit être lancé **avant** d'utiliser l'application sinon les données ne s'affichent pas.
+> ⚠️ Le backend doit être démarré avant d'utiliser l'application.
 
 ---
 
-## 📂 Rôle de chaque fichier
+### 4. Connexion
 
-### 🟦 Backend
-
-| Fichier | Rôle |
-|---|---|
-| `RoadWatchApplication.java` | Point d'entrée, démarre Spring Boot et Tomcat intégré |
-| `FirebaseConfig.java` | Lit `serviceAccountKey.json` et initialise la connexion Firebase |
-| `CorsConfig.java` | Autorise le frontend (port 5173) à appeler l'API (port 8080) |
-| `PotholeReport.java` | Modèle de données — représente un signalement avec ses attributs |
-| `ReportDAO.java` | Toutes les requêtes Firestore (lire, filtrer, mettre à jour) |
-| `ReportController.java` | Reçoit les requêtes HTTP et retourne du JSON automatiquement |
-
-### 🟩 Frontend
-
-| Fichier | Rôle |
-|---|---|
-| `main.jsx` | Point d'entrée React, définit la sidebar et les routes de navigation |
-| `api.js` | Centralise tous les appels HTTP vers Spring Boot |
-| `Dashboard.jsx` | Affiche les stats globales (total, en attente, confirmés, réparés) |
-| `MapPage.jsx` | Carte Leaflet avec marqueurs colorés, clustering et flyTo |
-| `Reports.jsx` | Liste des signalements avec filtres par statut et date |
-| `Stats.jsx` | Graphiques Chart.js (par mois, par statut) |
+Accéder à **http://localhost:5173** et se connecter avec un compte admin enregistré dans Firebase Auth.
 
 ---
 
-## 🔗 Comment Frontend et Backend sont reliés
+## 🔗 Endpoints API
 
-### Le lien : `api.js`
-
-Tout passe par ce fichier. Il définit l'URL du backend :
-
-```javascript
-const BASE_URL = "http://localhost:8080/api";
+Toutes les routes (sauf `/api/auth/login`) nécessitent un header :
+```
+Authorization: Bearer <token_jwt>
 ```
 
-Et expose des fonctions appelées par les composants React :
-
-```javascript
-export async function fetchReports() {
-  const res = await fetch(`${BASE_URL}/reports`);
-  return res.json();
-}
-```
-
-### Le flux complet
-
-```
-Composant React (ex: MapPage.jsx)
-        ↓ appelle fetchReports()
-api.js → fetch("http://localhost:8080/api/reports")
-        ↓ requête HTTP GET
-ReportController.java → getReports()
-        ↓ appelle
-ReportDAO.java → Firebase Firestore
-        ↓ retourne List<PotholeReport>
-Spring Boot convertit automatiquement en JSON
-        ↓ réponse JSON
-api.js reçoit les données
-        ↓
-React affiche les marqueurs sur la carte
-```
-
-### Pourquoi CORS est nécessaire
-
-Le frontend (port **5173**) et le backend (port **8080**) sont sur des ports différents. Le navigateur bloque par défaut les appels entre ports différents. `CorsConfig.java` dit au backend :
-
-```java
-// "Accepte les requêtes venant de http://localhost:5173"
-allowedOrigins("http://localhost:5173")
-```
-
----
-
-## 🌐 Endpoints API
-
+### Auth
 | Méthode | URL | Description |
 |---|---|---|
-| GET | `/api/dashboard` | Stats générales (total, pending, confirmed, fixed) |
-| GET | `/api/stats` | Données graphiques (par mois, par statut) |
-| GET | `/api/reports` | Liste avec filtres (`?status=&dateFrom=&dateTo=`) |
-| POST | `/api/reports/{id}/status` | Changer le statut (`{ "status": "confirmed" }`) |
-| GET | `/api/export?format=excel` | Télécharger Excel |
-| GET | `/api/export?format=pdf` | Télécharger PDF |
+| POST | `/api/auth/login` | Connexion → retourne un JWT |
 
----
-
-## 🏗️ Architecture MVC
-
-Spring Boot suit le pattern **Model - View - Controller** :
-
-```
-Requête HTTP (React)
-        ↓
-Controller  →  reçoit et retourne JSON
-        ↓
-DAO         →  parle à Firebase
-        ↓
-Model       →  structure des données
-```
-
-Les annotations Java remplacent la configuration manuelle des Servlets :
-
-| Annotation | Rôle |
-|---|---|
-| `@RestController` | Déclare que la classe gère des requêtes HTTP |
-| `@GetMapping` | Associe une méthode à une route GET |
-| `@PostMapping` | Associe une méthode à une route POST |
-| `@RequestBody` | Lit le JSON envoyé dans la requête |
-| `@PathVariable` | Lit une variable dans l'URL (ex: `{id}`) |
-
----
-
-## ⚙️ Variables à modifier selon l'environnement
-
-| Fichier | Variable | Quand la changer |
+### Signalements
+| Méthode | URL | Description |
 |---|---|---|
-| `api.js` | `BASE_URL` | Si le backend est déployé sur un serveur distant |
-| `MapPage.jsx` | `center={[35.7595, -5.8340]}` | Changer les coordonnées GPS de ta ville |
-| `CorsConfig.java` | `allowedOrigins(...)` | Mettre l'URL du frontend en production |
+| GET | `/api/dashboard` | KPIs globaux + 5 signalements récents |
+| GET | `/api/stats` | Données graphiques (par mois, par statut) |
+| GET | `/api/reports` | Liste avec filtres `?status=&dateFrom=&dateTo=` |
+| GET | `/api/reports/{id}` | Détail d'un signalement |
+| POST | `/api/reports` | Créer un signalement |
+| POST | `/api/reports/{id}/status` | Changer le statut `{ "status": "confirmed" }` |
+| DELETE | `/api/reports/{id}` | Supprimer un signalement |
+| GET | `/api/reports/{id}/history` | Historique des changements |
+| GET | `/api/reports/{id}/comments` | Commentaires paginés `?page=0&limit=20` |
+| DELETE | `/api/reports/{id}/comments/{commentId}` | Supprimer un commentaire |
+| GET | `/api/reports/{id}/likes` | Nombre de likes |
+| GET | `/api/reports/{id}/likes/paginated` | Likes avec infos utilisateurs |
+| GET | `/api/export` | Export `?format=excel\|pdf&status=` |
+
+### Utilisateurs
+| Méthode | URL | Description |
+|---|---|---|
+| GET | `/api/users` | Liste tous les utilisateurs Firebase |
+| GET | `/api/users/stats` | Stats (total, actifs, désactivés) |
+| GET | `/api/users/{uid}` | Détail + signalements d'un utilisateur |
+| POST | `/api/users/{uid}/disable` | Désactiver un compte |
+| POST | `/api/users/{uid}/enable` | Activer un compte |
+| DELETE | `/api/users/{uid}` | Supprimer un compte |
+
+### Météo & Notifications
+| Méthode | URL | Description |
+|---|---|---|
+| GET | `/api/weather?lat=&lng=` | Score de risque météo |
+| GET | `/api/notifications/subscribe` | Flux SSE temps réel |
 
 ---
 
-*RoadWatch · Spring Boot + React · 2026*
+## 🧪 Tests
+
+### Frontend (Vitest + Testing Library)
+
+```bash
+cd frontend
+npm run test          # Lancer les tests
+npm run coverage      # Rapport de couverture
+```
+
+| Fichier | Couverture |
+|---|---|
+| `Dashboard.jsx` | 89% |
+| `Reports.jsx` | 92% |
+| `Login.jsx` | 100% |
+| `Users.jsx` | 97% |
+| `MapPage.jsx` | 82% |
+| `HistoryModal.jsx` | 100% |
+| **Total** | **60%+** |
+
+### Backend (JUnit 5 + Mockito)
+
+```bash
+cd backend
+mvn test                        # Lancer les tests
+start target/site/jacoco/index.html  # Rapport JaCoCo (Windows)
+```
+
+| Package | Couverture |
+|---|---|
+| `model` | 100% |
+| `config` | 98% |
+| `service` | 91% |
+| `controller` | 49% |
+| **Total** | **65%** |
+
+> Les DAOs Firebase (Firestore) sont exclus de la couverture JaCoCo car ils nécessitent une connexion Firebase réelle.
+
+---
+
+## ⚙️ Variables d'environnement
+
+| Fichier | Variable | Description |
+|---|---|---|
+| `api.js` | `BASE_URL` | URL du backend (`http://localhost:8080/api`) |
+| `CorsConfig.java` | `allowedOrigins` | URL du frontend autorisée |
+| `MapPage.jsx` | `center` | Coordonnées GPS par défaut de la carte |
+| `application.properties` | `jwt.secret` | Clé secrète JWT |
+
+---
+
+## 🛠️ Technologies utilisées
+
+**Backend**
+- Spring Boot 3.2 · Spring Security · JWT (jjwt 0.11)
+- Firebase Admin SDK 9.2
+- iText 5 (PDF) · Apache POI (Excel)
+- JUnit 5 · Mockito 5 · JaCoCo
+
+**Frontend**
+- React 18 · Vite · React Router 6
+- Leaflet · react-leaflet · react-leaflet-cluster
+- Chart.js · Recharts
+- Vitest · Testing Library
+
+---
+
+*RoadWatch · Spring Boot + React + Firebase · 2026*
