@@ -57,6 +57,9 @@ trivy-backend:
   image:
     name: aquasec/trivy:latest
     entrypoint: [""]
+  variables:
+    TRIVY_USERNAME: $CI_REGISTRY_USER
+    TRIVY_PASSWORD: $CI_REGISTRY_PASSWORD
   script:
     - trivy image --exit-code 0 --severity CRITICAL,HIGH $BACKEND_IMAGE
   only:
@@ -66,6 +69,9 @@ trivy-frontend:
   image:
     name: aquasec/trivy:latest
     entrypoint: [""]
+  variables:
+    TRIVY_USERNAME: $CI_REGISTRY_USER
+    TRIVY_PASSWORD: $CI_REGISTRY_PASSWORD
   script:
     - trivy image --exit-code 0 --severity CRITICAL,HIGH $FRONTEND_IMAGE
   only:
