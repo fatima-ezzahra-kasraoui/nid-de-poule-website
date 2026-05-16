@@ -89,7 +89,8 @@ deploy:
     - curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
     - chmod +x kubectl && mv kubectl /usr/local/bin/
     - mkdir -p ~/.kube
-    - cat $KUBE_CONFIG > ~/.kube/config
+    - cp $KUBE_CONFIG ~/.kube/config
+    - kubectl config view
   script:
     - kubectl apply -f k8s/
     - kubectl set image deployment/backend backend=$BACKEND_IMAGE -n roadwatch
