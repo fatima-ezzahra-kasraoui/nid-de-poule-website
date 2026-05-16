@@ -1,3 +1,6 @@
+include:
+  - template: Security/SAST.gitlab-ci.yml
+
 stages:
   - test
   - build
@@ -9,9 +12,6 @@ variables:
   BACKEND_IMAGE: $CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHORT_SHA
   FRONTEND_IMAGE: $CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHORT_SHA
 
-# ─────────────────────────────────────────────
-# TESTS
-# ─────────────────────────────────────────────
 test-backend:
   stage: test
   image: maven:3.9-eclipse-temurin-21
@@ -30,9 +30,6 @@ test-frontend:
     - npm ci --legacy-peer-deps
     - npm test
 
-# ─────────────────────────────────────────────
-# BUILD DOCKER
-# ─────────────────────────────────────────────
 build-backend:
   stage: build
   image: docker:24
@@ -59,9 +56,6 @@ build-frontend:
   only:
     - main
 
-# ─────────────────────────────────────────────
-# SECURITY
-# ─────────────────────────────────────────────
 trivy-backend:
   stage: security
   image: aquasec/trivy:latest
@@ -78,16 +72,6 @@ trivy-frontend:
   only:
     - main
 
-sast:
-  stage: security
-  include:
-    - template: Security/SAST.gitlab-ci.yml
-  only:
-    - main
-
-# ─────────────────────────────────────────────
-# DEPLOY
-# ─────────────────────────────────────────────
 deploy:
   stage: deploy
   image: bitnami/kubectl:latest
