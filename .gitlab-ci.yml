@@ -78,10 +78,17 @@ trivy-frontend:
     - main
 deploy:
   stage: deploy
-  image: bitnami/kubectl:latest
+  image: ubuntu:22.04
   before_script:
+    - apt-get update -qq && apt-get install -y -qq curl
+    - curl -fsSL https://tailscale.com/install.sh | sh
+    - tailscale up --authkey=$TAILSCALE_AUTH_KEY --hostname=gitlab-runner
+    - sleep 5
+    - curl -LO "https://dl.k8s.io/release/stable.txt"
+    - curl -LO "https://dl.k8s.io/release/$(cat stable.txt)/bin/linux/amd64/kubectl"
+    - chmod +x kubectl && mv kubectl /usr/local/bin/
     - mkdir -p ~/.kube
-    - echo "$KUBE_CONFIG" | base64 -d > ~/.kube/config
+    - cp $KUBE_CONFIG ~/.kube/config
   script:
     - kubectl apply -f k8s/
     - kubectl set image deployment/backend backend=$BACKEND_IMAGE -n roadwatch
