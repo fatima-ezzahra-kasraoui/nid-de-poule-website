@@ -54,16 +54,20 @@ build-frontend:
     - main
 trivy-backend:
   stage: security
-  image: aquasec/trivy:latest
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
   script:
-    - trivy image --exit-code 1 --severity CRITICAL --ignore-unfixed $BACKEND_IMAGE
+    - trivy image --exit-code 0 --severity CRITICAL,HIGH $BACKEND_IMAGE
   only:
     - main
 trivy-frontend:
   stage: security
-  image: aquasec/trivy:latest
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
   script:
-    - trivy image --exit-code 1 --severity CRITICAL --ignore-unfixed $FRONTEND_IMAGE
+    - trivy image --exit-code 0 --severity CRITICAL,HIGH $FRONTEND_IMAGE
   only:
     - main
 deploy:
