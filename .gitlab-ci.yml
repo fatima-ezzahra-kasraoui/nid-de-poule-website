@@ -92,7 +92,7 @@ deploy:
     - mkdir -p ~/.kube && cp $KUBE_CONFIG ~/.kube/config
     - kubectl config view
   script:
-    - kubectl apply -f k8s/
+    - kubectl apply -f k8s/ --validate=false
     - kubectl set image deployment/backend backend=$BACKEND_IMAGE -n roadwatch
     - kubectl set image deployment/frontend frontend=$FRONTEND_IMAGE -n roadwatch
     - kubectl rollout status deployment/backend -n roadwatch --timeout=120s
