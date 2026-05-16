@@ -1,27 +1,26 @@
 include:
   - template: Security/SAST.gitlab-ci.yml
-
 stages:
   - test
   - build
   - security
   - deploy
-
 variables:
   DOCKER_DRIVER: overlay2
   BACKEND_IMAGE: $CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHORT_SHA
   FRONTEND_IMAGE: $CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHORT_SHA
-
 test-backend:
   stage: test
   image: maven:3.9-eclipse-temurin-21
+  before_script:
+    - mkdir -p backend/src/main/resources
+    - cp $FIREBASE_KEY_JSON backend/src/main/resources/serviceAccountKey.json
   script:
     - cd backend
     - mvn test -Dspring.profiles.active=test -q
   artifacts:
     reports:
       junit: backend/target/surefire-reports/TEST-*.xml
-
 test-frontend:
   stage: test
   image: node:20-alpine
@@ -29,7 +28,6 @@ test-frontend:
     - cd frontend
     - npm ci --legacy-peer-deps
     - npm test
-
 build-backend:
   stage: build
   image: docker:24
@@ -42,7 +40,6 @@ build-backend:
     - docker push $BACKEND_IMAGE
   only:
     - main
-
 build-frontend:
   stage: build
   image: docker:24
@@ -55,7 +52,6 @@ build-frontend:
     - docker push $FRONTEND_IMAGE
   only:
     - main
-
 trivy-backend:
   stage: security
   image: aquasec/trivy:latest
@@ -63,7 +59,6 @@ trivy-backend:
     - trivy image --exit-code 1 --severity CRITICAL --ignore-unfixed $BACKEND_IMAGE
   only:
     - main
-
 trivy-frontend:
   stage: security
   image: aquasec/trivy:latest
@@ -71,7 +66,6 @@ trivy-frontend:
     - trivy image --exit-code 1 --severity CRITICAL --ignore-unfixed $FRONTEND_IMAGE
   only:
     - main
-
 deploy:
   stage: deploy
   image: bitnami/kubectl:latest
