@@ -96,7 +96,7 @@ deploy:
     - kubectl apply -f k8s/ --validate=false
     - kubectl set image deployment/backend backend=$BACKEND_IMAGE -n roadwatch
     - kubectl set image deployment/frontend frontend=$FRONTEND_IMAGE -n roadwatch
-    - kubectl rollout status deployment/backend -n roadwatch --timeout=120s
-    - kubectl rollout status deployment/frontend -n roadwatch --timeout=120s
+    - kubectl rollout status deployment/backend -n roadwatch --timeout=600s
+    - kubectl rollout status deployment/frontend -n roadwatch --timeout=600s
   only:
     - main
