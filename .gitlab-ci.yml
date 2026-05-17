@@ -36,6 +36,7 @@ build-backend:
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
+    - cp $FIREBASE_KEY_JSON backend/serviceAccountKey.json
     - docker build -t $BACKEND_IMAGE ./backend
     - docker push $BACKEND_IMAGE
     - docker tag $BACKEND_IMAGE $CI_REGISTRY_IMAGE/backend:latest
