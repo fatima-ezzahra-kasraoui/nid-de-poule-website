@@ -6,7 +6,7 @@ let listeners = [];
 
 function createEventSource() {
     try {
-        eventSource = new EventSource("http://localhost:8080/api/notifications/subscribe");
+        eventSource = new EventSource("/api/notifications/subscribe");
 
         eventSource.addEventListener("notification", (event) => {
             try {

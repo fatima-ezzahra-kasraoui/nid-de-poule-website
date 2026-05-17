@@ -70,7 +70,7 @@ describe("auth.js — login()", () => {
     await login("admin@rw.fr", "secret");
 
     expect(global.fetch).toHaveBeenCalledWith(
-      "http://localhost:8080/api/auth/login",
+      "/api/auth/login",
       expect.objectContaining({ method: "POST" })
     );
   });

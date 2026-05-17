@@ -119,7 +119,7 @@ const extractZone = (address) => {
 
 const fetchWeatherRisk = async (lat, lng) => {
   try {
-    const response = await fetch(`http://localhost:8080/api/weather?lat=${lat}&lng=${lng}`);
+    const response = await fetch(`/api/weather?lat=${lat}&lng=${lng}`);
     const data = await response.json();
     return { score: data.score, condition: data.condition, description: data.description };
   } catch (error) {
