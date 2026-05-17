@@ -93,7 +93,7 @@ describe("api.js — fetchDashboard()", () => {
     await fetchDashboard();
 
     expect(global.fetch).toHaveBeenCalledWith(
-      "http://localhost:8080/api/dashboard",
+      "/api/dashboard",
       expect.any(Object)
     );
   });
@@ -118,7 +118,7 @@ describe("api.js — fetchStats()", () => {
     mockOk([]);
     await fetchStats();
     expect(global.fetch).toHaveBeenCalledWith(
-      "http://localhost:8080/api/stats",
+      "/api/stats",
       expect.any(Object)
     );
   });
