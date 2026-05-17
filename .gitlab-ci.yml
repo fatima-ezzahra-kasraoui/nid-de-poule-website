@@ -85,17 +85,10 @@ deploy:
   stage: deploy
   image: ubuntu:22.04
   before_script:
-    - apt-get update -qq && apt-get install -y -qq curl iptables
-    - curl -fsSL https://tailscale.com/install.sh | sh
-    - tailscaled --tun=userspace-networking --socks5-server=localhost:1055 &
-    - sleep 5
-    - tailscale up --authkey=$TAILSCALE_AUTH_KEY --hostname=gitlab-runner --accept-routes
-    - sleep 5
+    - apt-get update -qq && apt-get install -y -qq curl
     - curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
     - chmod +x kubectl && mv kubectl /usr/local/bin/
-    - mkdir -p ~/.kube
     - mkdir -p ~/.kube && cp $KUBE_CONFIG ~/.kube/config
-    - kubectl config view
   script:
     - kubectl create secret generic firebase-key --from-file=serviceAccountKey.json=$FIREBASE_KEY_JSON --namespace=roadwatch --dry-run=client -o yaml | kubectl apply -f -
     - kubectl create secret docker-registry gitlab-registry --docker-server=registry.gitlab.com --docker-username=$CI_REGISTRY_USER --docker-password=$REGISTRY_TOKEN --namespace=roadwatch --dry-run=client -o yaml | kubectl apply -f -
