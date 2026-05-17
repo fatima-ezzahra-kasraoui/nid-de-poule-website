@@ -38,6 +38,8 @@ build-backend:
   script:
     - docker build -t $BACKEND_IMAGE ./backend
     - docker push $BACKEND_IMAGE
+    - docker tag $BACKEND_IMAGE $CI_REGISTRY_IMAGE/backend:latest
+    - docker push $CI_REGISTRY_IMAGE/backend:latest
   only:
     - main
 build-frontend:
@@ -50,6 +52,8 @@ build-frontend:
   script:
     - docker build -t $FRONTEND_IMAGE ./frontend
     - docker push $FRONTEND_IMAGE
+    - docker tag $FRONTEND_IMAGE $CI_REGISTRY_IMAGE/frontend:latest
+    - docker push $CI_REGISTRY_IMAGE/frontend:latest
   only:
     - main
 trivy-backend:
