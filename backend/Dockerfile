@@ -6,7 +6,7 @@ COPY src ./src
 COPY serviceAccountKey.json src/main/resources/serviceAccountKey.json
 RUN mvn package -DskipTests -q
 
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:21-jre
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
 EXPOSE 8080
