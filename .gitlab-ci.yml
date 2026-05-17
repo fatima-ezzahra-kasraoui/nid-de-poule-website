@@ -90,12 +90,12 @@ deploy:
     - chmod +x kubectl && mv kubectl /usr/local/bin/
     - mkdir -p ~/.kube
     - mkdir -p ~/.kube && cp $KUBE_CONFIG ~/.kube/config
-    - kubectl config view
+    - ALL_PROXY=socks5://localhost:1055 kubectl config view
   script:
-    - kubectl apply -f k8s/ --validate=false
-    - kubectl set image deployment/backend backend=$BACKEND_IMAGE -n roadwatch
-    - kubectl set image deployment/frontend frontend=$FRONTEND_IMAGE -n roadwatch
-    - kubectl rollout status deployment/backend -n roadwatch --timeout=120s
-    - kubectl rollout status deployment/frontend -n roadwatch --timeout=120s
+    - ALL_PROXY=socks5://localhost:1055 kubectl apply -f k8s/ --validate=false
+    - ALL_PROXY=socks5://localhost:1055 kubectl set image deployment/backend backend=$BACKEND_IMAGE -n roadwatch
+    - ALL_PROXY=socks5://localhost:1055 kubectl set image deployment/frontend frontend=$FRONTEND_IMAGE -n roadwatch
+    - ALL_PROXY=socks5://localhost:1055 kubectl rollout status deployment/backend -n roadwatch --timeout=120s
+    - ALL_PROXY=socks5://localhost:1055 kubectl rollout status deployment/frontend -n roadwatch --timeout=120s
   only:
     - main
