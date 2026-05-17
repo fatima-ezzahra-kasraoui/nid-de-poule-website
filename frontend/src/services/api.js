@@ -5,7 +5,7 @@
 // Nouveau : un seul fichier qui gère toute la communication API
 // ─────────────────────────────────────────────────────────────────
 
-const BASE_URL = "http://localhost:8080/api";
+const BASE_URL = "/api";
 
 // Récupérer le token depuis localStorage
 function getToken() {
