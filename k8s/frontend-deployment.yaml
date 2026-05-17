@@ -13,6 +13,8 @@ spec:
       labels:
         app: frontend
     spec:
+      imagePullSecrets:
+      - name: gitlab-registry
       containers:
       - name: frontend
         image: registry.gitlab.com/fatikasraoui2003/nid-de-poule-website/frontend:latest

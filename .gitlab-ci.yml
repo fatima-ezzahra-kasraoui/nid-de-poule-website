@@ -92,6 +92,7 @@ deploy:
     - mkdir -p ~/.kube && cp $KUBE_CONFIG ~/.kube/config
     - kubectl config view
   script:
+    - kubectl create secret docker-registry gitlab-registry --docker-server=registry.gitlab.com --docker-username=$CI_REGISTRY_USER --docker-password=$CI_REGISTRY_PASSWORD --namespace=roadwatch --dry-run=client -o yaml | kubectl apply -f -
     - kubectl apply -f k8s/ --validate=false
     - kubectl set image deployment/backend backend=$BACKEND_IMAGE -n roadwatch
     - kubectl set image deployment/frontend frontend=$FRONTEND_IMAGE -n roadwatch
