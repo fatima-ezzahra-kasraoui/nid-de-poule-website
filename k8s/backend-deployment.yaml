@@ -20,11 +20,19 @@ spec:
         image: registry.gitlab.com/fatikasraoui2003/nid-de-poule-website/backend:latest
         ports:
         - containerPort: 8080
+        volumeMounts:
+        - name: firebase-key
+          mountPath: /app/resources
+          readOnly: true
+      volumes:
+      - name: firebase-key
+        secret:
+          secretName: firebase-key
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: backend
+  name: backend-service
   namespace: roadwatch
 spec:
   selector:
