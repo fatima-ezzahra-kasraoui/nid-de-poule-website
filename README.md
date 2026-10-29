@@ -296,8 +296,8 @@ start target/site/jacoco/index.html  # Rapport JaCoCo (Windows)
 | `model` | 100% |
 | `config` | 98% |
 | `service` | 91% |
-| `controller` | 49% |
-| **Total** | **65%** |
+| `controller` | 60% |
+| **Total** | **74%** |
 
 > Les DAOs Firebase (Firestore) sont exclus de la couverture JaCoCo car ils nécessitent une connexion Firebase réelle.
 
